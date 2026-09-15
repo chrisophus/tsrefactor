@@ -51,9 +51,21 @@ context:
 ## Develop
 
 ```sh
+npm run check     # typecheck, lint, knip, tests — what CI should run
 npm test          # node --test, run directly on the TypeScript sources
 npm run typecheck
+npm run lint      # eslint; --fix is `npm run lint:fix`
+npm run knip      # unused files, exports, dependencies
 ```
+
+Linting follows the same division this repository recommends for Go: nothing
+here re-implements a check an off-the-shelf linter already does. ESLint carries
+the type-aware rules (typescript-eslint's strict type-checked set), the size and
+shape thresholds gorefactor uses for Go (75-line functions, complexity 15,
+nesting 5), sonarjs for cognitive complexity and duplicate logic, unicorn's
+correctness rules, and import-x for cycles and fan-out. knip owns unused files,
+exports, and dependencies. Complexity findings are warnings, the advisory tier;
+everything else is an error.
 
 `tsrefactor.md` is the design: what each module ports from gorefactor, and the decisions made where
 TypeScript differs from Go.

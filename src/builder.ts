@@ -9,7 +9,7 @@ import type { Project, SourceFile } from "ts-morph";
 
 import { compareStrings, type Expansion, type File } from "./envelope.ts";
 import type { LineRange } from "./git.ts";
-import { declsIn, type Decl } from "./resolve.ts";
+import { declsIn, type Decl } from "./decls.ts";
 
 export class Builder {
   readonly repo: string;

@@ -17,7 +17,7 @@ import { compareStrings } from "./envelope.ts";
 
 // typeCheckNotesCap bounds how many diagnostics reach notes[]: enough to say
 // what is wrong, not so many that a broken tree buries the envelope.
-export const typeCheckNotesCap = 5;
+const typeCheckNotesCap = 5;
 
 // defaultCompilerOptions stand in when no tsconfig.json covers the change.
 // They are permissive about module shape so a stray file still binds.
@@ -57,7 +57,7 @@ export function loadProject(repo: string, changedAbs: readonly string[]): Loaded
         : "no usable tsconfig.json covers the changed TypeScript files; they were loaded with default compiler options",
     );
   } else {
-    const ordered = [...leaves.entries()].sort(([a], [b]) => compareStrings(a, b));
+    const ordered = [...leaves].sort(([a], [b]) => compareStrings(a, b));
     options = pickOptions(ordered, changedAbs);
     for (const [, parsed] of ordered) {
       files.push(...parsed.fileNames);
@@ -119,10 +119,10 @@ function collectLeaves(
   const rel = toRel(repo, configPath);
   const host: ts.ParseConfigFileHost = {
     useCaseSensitiveFileNames: ts.sys.useCaseSensitiveFileNames,
-    readDirectory: ts.sys.readDirectory,
-    fileExists: ts.sys.fileExists,
-    readFile: ts.sys.readFile,
-    getCurrentDirectory: ts.sys.getCurrentDirectory,
+    readDirectory: ts.sys.readDirectory.bind(ts.sys),
+    fileExists: ts.sys.fileExists.bind(ts.sys),
+    readFile: ts.sys.readFile.bind(ts.sys),
+    getCurrentDirectory: ts.sys.getCurrentDirectory.bind(ts.sys),
     onUnRecoverableConfigFileDiagnostic: (d) => notes.push(`tsconfig ${rel}: ${flatten(d)}`),
   };
   const parsed = ts.getParsedCommandLineOfConfigFile(configPath, undefined, host);
@@ -132,7 +132,7 @@ function collectLeaves(
   const refs = parsed.projectReferences ?? [];
   for (const e of parsed.errors) {
     // "No inputs were found" is the normal state of a solution-style config.
-    if (e.code === 18003 && refs.length > 0) {
+    if (e.code === 18_003 && refs.length > 0) {
       continue;
     }
     notes.push(`tsconfig ${rel}: ${flatten(e)}`);
@@ -148,7 +148,7 @@ function collectLeaves(
 
 // pickOptions takes the compiler options of the config that owns the most
 // changed files, so the change is checked the way its own build checks it.
-function pickOptions(ordered: Array<[string, ts.ParsedCommandLine]>, changedAbs: readonly string[]): ts.CompilerOptions {
+function pickOptions(ordered: [string, ts.ParsedCommandLine][], changedAbs: readonly string[]): ts.CompilerOptions {
   const changed = new Set(changedAbs.map(normalize));
   let best = ordered[0]![1];
   let bestCount = -1;
@@ -192,11 +192,13 @@ function typeCheckNotes(project: Project, repo: string, changedAbs: readonly str
 
   const out: string[] = [];
   if (messages.length > 0) {
-    out.push(`${messages.length} type-check error(s) in the changed files; symbols they name may not resolve`);
-    out.push(...messages.slice(0, typeCheckNotesCap).map((m) => `type-check: ${m}`));
-    if (messages.length > typeCheckNotesCap) {
-      out.push(`type-check: ${messages.length - typeCheckNotesCap} further error(s) not listed (cap ${typeCheckNotesCap})`);
-    }
+    out.push(
+      `${messages.length} type-check error(s) in the changed files; symbols they name may not resolve`,
+      ...messages.slice(0, typeCheckNotesCap).map((m) => `type-check: ${m}`),
+      ...(messages.length > typeCheckNotesCap
+        ? [`type-check: ${messages.length - typeCheckNotesCap} further error(s) not listed (cap ${typeCheckNotesCap})`]
+        : []),
+    );
   }
   if (formatBlind.size > 0) {
     out.push(

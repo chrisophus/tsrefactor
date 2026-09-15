@@ -166,7 +166,7 @@ test("a change with no TypeScript declaration explains every empty role", (t) =>
     assert.ok(env.notes?.includes(`no ${r} expansions: the change resolved to no TypeScript declaration`), r);
   }
   // History is driven from the manifest, not from declarations.
-  assert.ok(role(env, "history").some((e) => e.file === "web/src/money.ts"), `${JSON.stringify(env.expansions)}`);
+  assert.ok(role(env, "history").some((e) => e.file === "web/src/money.ts"), JSON.stringify(env.expansions));
 });
 
 test("build is deterministic", (t) => {
@@ -209,7 +209,7 @@ test("a nodenext ESM package does not report module-format errors as type errors
   assert.ok(!env.notes?.some((n) => n.includes("type-check")), `${env.notes}`);
   assert.ok(
     // One per import.meta in the changed file.
-    env.notes?.some((n) => /^2 ESM\/CommonJS diagnostic\(s\) were dropped: /.test(n)),
+    env.notes?.some((n) => n.startsWith("2 ESM/CommonJS diagnostic(s) were dropped: ")),
     `${env.notes}`,
   );
 });

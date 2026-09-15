@@ -11,8 +11,8 @@ import { Node, SyntaxKind } from "ts-morph";
 import { errorMessage, sortedUnique, type Builder } from "./builder.ts";
 import { isTestPath } from "./classify.ts";
 import { compareStrings } from "./envelope.ts";
-import { callerContextLines, priorityFor } from "./expand.ts";
-import type { Decl } from "./resolve.ts";
+import { callerContextLines, priorityFor } from "./priority.ts";
+import type { Decl } from "./decls.ts";
 
 // UseSite is one place the code reads a changed symbol.
 interface UseSite {

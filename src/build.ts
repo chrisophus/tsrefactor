@@ -34,12 +34,12 @@ export interface Options {
 // resolving the merge base, listing the changed files — and every later stage
 // degrades into notes instead.
 export function build(opts: Options): Envelope {
-  const root = opts.root || ".";
+  const root = opts.root === undefined || opts.root === "" ? "." : opts.root;
   let repo: string;
   try {
     repo = repoRoot(root);
   } catch (err) {
-    throw new Error(`locate the work tree at ${root}: ${errorMessage(err)}`);
+    throw new Error(`locate the work tree at ${root}: ${errorMessage(err)}`, { cause: err });
   }
   try {
     repo = realpathSync(repo);
@@ -50,13 +50,13 @@ export function build(opts: Options): Envelope {
   try {
     base = mergeBase(repo, opts.baseRef);
   } catch (err) {
-    throw new Error(`resolve the merge base with ${opts.baseRef}: ${errorMessage(err)}`);
+    throw new Error(`resolve the merge base with ${opts.baseRef}: ${errorMessage(err)}`, { cause: err });
   }
   let changes: Change[];
   try {
     changes = changedFiles(repo, base);
   } catch (err) {
-    throw new Error(`list the files changed since ${base}: ${errorMessage(err)}`);
+    throw new Error(`list the files changed since ${base}: ${errorMessage(err)}`, { cause: err });
   }
 
   const b = new Builder(repo, base);

@@ -15,7 +15,7 @@ import {
 import { fixtureRepo, git, removeFile, writeFile } from "./helpers.ts";
 
 test("parseNameStatus keeps the new path of a rename or copy", () => {
-  const raw = ["M", "a.ts", "R087", "old.ts", "new.ts", "C100", "src.ts", "copy.ts", "D", "gone.ts", ""].join("\x00");
+  const raw = ["M", "a.ts", "R087", "old.ts", "new.ts", "C100", "src.ts", "copy.ts", "D", "gone.ts", ""].join("\u{0}");
   assert.deepEqual(parseNameStatus(raw), [
     { path: "a.ts", status: "M" },
     { path: "new.ts", status: "R087" },
@@ -23,7 +23,7 @@ test("parseNameStatus keeps the new path of a rename or copy", () => {
     { path: "gone.ts", status: "D" },
   ]);
   // A truncated record is dropped rather than misread.
-  assert.deepEqual(parseNameStatus("R100\x00only-old.ts\x00"), []);
+  assert.deepEqual(parseNameStatus("R100\u{0}only-old.ts\u{0}"), []);
 });
 
 test("sanitizedGitEnv strips every repo-locating variable", () => {

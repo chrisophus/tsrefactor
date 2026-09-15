@@ -106,7 +106,7 @@ test("the history of deleted lines reaches the commit that added them, ranked ah
   const exps = env.expansions ?? [];
   const firstRemoval = exps.findIndex((e) => e.role === "removal");
   const firstHistory = exps.findIndex((e) => e.role === "history");
-  assert.ok(firstHistory < 0 || firstRemoval < firstHistory, "removal must rank ahead of history");
+  assert.ok(firstHistory === -1 || firstRemoval < firstHistory, "removal must rank ahead of history");
 });
 
 // A deleted file resolves to no declaration at all, so history is the only

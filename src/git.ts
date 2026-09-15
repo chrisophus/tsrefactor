@@ -113,7 +113,7 @@ export function parseNameStatus(s: string): Change[] {
   const out: Change[] = [];
   for (let i = 0; i < fields.length; i++) {
     const status = fields[i]!;
-    const want = status[0] === "R" || status[0] === "C" ? 2 : 1;
+    const want = status.startsWith("R") || status.startsWith("C") ? 2 : 1;
     if (i + want >= fields.length) {
       break;
     }
@@ -152,7 +152,7 @@ export function hunkRanges(repo: string, base: string, path: string): LineRange[
 // parseHunkHeader reads the "+start,count" half of a unified diff hunk header.
 export function parseHunkHeader(line: string): LineRange | undefined {
   const i = line.indexOf("+");
-  if (i < 0) {
+  if (i === -1) {
     return undefined;
   }
   let rest = line.slice(i + 1);
@@ -237,7 +237,7 @@ export function hunkSides(repo: string, base: string, path: string): HunkSide[] 
 // the hunk adds without removing, and there is nothing deleted to trace.
 export function parseRemovedHunkHeader(line: string): LineRange | undefined {
   const i = line.indexOf("-");
-  if (i < 0) {
+  if (i === -1) {
     return undefined;
   }
   let rest = line.slice(i + 1);
@@ -289,7 +289,7 @@ export function mergeRanges(input: readonly LineRange[]): LineRange[] {
   const sorted = [...input].sort((a, b) => a.start - b.start || a.end - b.end);
   const out: LineRange[] = [];
   for (const r of sorted) {
-    const last = out[out.length - 1];
+    const last = out.at(-1);
     if (last && r.start <= last.end + 1) {
       last.end = Math.max(last.end, r.end);
       continue;
@@ -303,8 +303,8 @@ function parseDecimal(s: string | undefined): number | undefined {
   return s !== undefined && /^\d+$/.test(s) ? Number(s) : undefined;
 }
 
-export function splitNUL(s: string): string[] {
-  return s.split("\x00").filter((f) => f !== "");
+function splitNUL(s: string): string[] {
+  return s.split("\u{0}").filter((f) => f !== "");
 }
 
 function toSlash(p: string): string {

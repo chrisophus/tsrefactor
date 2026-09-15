@@ -75,7 +75,7 @@ test("context --changed without --json prints the human summary", (t) => {
 
 test("context argument rules are usage errors", (t) => {
   const dir = changedFixture(t);
-  const cases: Array<[args: string[], firstLine: RegExp]> = [
+  const cases: [args: string[], firstLine: RegExp][] = [
     [["context"], /^context needs --changed <ref>$/],
     [["context", "--changed", "HEAD", "total"], /^context --changed takes no symbol argument \(got "total"\)$/],
     [["context", "--changed", "HEAD", "--budget", "500"], /^--budget does not apply to --changed; expansions are emitted whole/],
@@ -88,7 +88,7 @@ test("context argument rules are usage errors", (t) => {
     const res = runCli(args, dir);
     assert.equal(res.status, 1, args.join(" "));
     assert.equal(res.stdout, "", args.join(" "));
-    assert.match(res.stderr.split("\n")[0]!, firstLine, args.join(" "));
+    assert.match(res.stderr.split("\n", 1)[0]!, firstLine, args.join(" "));
   }
 });
 
@@ -97,12 +97,12 @@ test("failures that abort the run explain themselves on the first stderr line", 
   const badRef = runCli(["context", "--changed", "no-such-ref", "--json"], dir);
   assert.equal(badRef.status, 1);
   assert.equal(badRef.stdout, "");
-  assert.match(badRef.stderr.split("\n")[0]!, /^resolve the merge base with no-such-ref: git rev-parse/);
+  assert.match(badRef.stderr.split("\n", 1)[0]!, /^resolve the merge base with no-such-ref: git rev-parse/);
 
   const notRepo = tempDir(t);
   const outside = runCli(["context", "--changed", "HEAD", "--json"], notRepo);
   assert.equal(outside.status, 1);
-  assert.match(outside.stderr.split("\n")[0]!, /^locate the work tree at \.: git rev-parse --show-toplevel: /);
+  assert.match(outside.stderr.split("\n", 1)[0]!, /^locate the work tree at \.: git rev-parse --show-toplevel: /);
 });
 
 test("version prints the package version", (t) => {

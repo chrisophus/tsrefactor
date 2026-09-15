@@ -13,24 +13,21 @@ import {
 } from "./git.ts";
 import { expandSiblings, expandTypes } from "./expandTypes.ts";
 import { expandUses } from "./expandUses.ts";
-import type { Decl } from "./resolve.ts";
+import { priorityFor } from "./priority.ts";
+import type { Decl } from "./decls.ts";
 
 // historyRevisions caps how far back the history role reads per line span. A
 // handful of revisions is enough to show that a line was deliberate, and it
 // keeps a file rewritten fifty times from burying the rest of the envelope.
-export const historyRevisions = 3;
+const historyRevisions = 3;
 
 // historyRangesPerFile caps how many spans of one file get their own history.
-export const historyRangesPerFile = 3;
+const historyRangesPerFile = 3;
 
 // removedHistoryPriority orders a deleted span's history within the removal
 // role. It sits above priorityFor's 50..100 band, where gorefactor set it while
 // removals shared the history role with surviving lines and had to outrank them.
-export const removedHistoryPriority = 120;
-
-// callerContextLines is how much surrounding code a call site carries. A call
-// alone does not say what it is guarding or what it does with the result.
-export const callerContextLines = 2;
+const removedHistoryPriority = 120;
 
 // expand runs every stage. The roles that read declarations need declarations;
 // history does not, and is driven from the manifest instead. A change that only
@@ -57,7 +54,7 @@ export function expand(b: Builder): void {
 // Walking base with a working-tree position traces whatever happens to sit at
 // that offset in the older file, which on any file whose earlier hunks shifted
 // line numbers is not the code under review — and git reports no error for it.
-export function expandHistory(b: Builder): void {
+function expandHistory(b: Builder): void {
   for (const f of b.files) {
     let sides: HunkSide[];
     try {
@@ -169,7 +166,7 @@ export function rankedRanges(ranges: readonly LineRange[], limit: number): [Line
 // rankedSides applies the same cap to paired hunk halves, ranking on the
 // working-tree span because that is the side whose size says how much of the
 // change the span accounts for.
-export function rankedSides(sides: readonly HunkSide[], limit: number): [HunkSide[], number] {
+function rankedSides(sides: readonly HunkSide[], limit: number): [HunkSide[], number] {
   if (sides.length <= limit) {
     return [[...sides], 0];
   }
@@ -190,7 +187,7 @@ export function rankedSides(sides: readonly HunkSide[], limit: number): [HunkSid
 function historyContext(b: Builder, rel: string, r: LineRange): [Decl | undefined, number] {
   const covered = b.decls.filter((d) => d.rel === rel && d.start <= r.end && r.start <= d.end);
   const keys = new Set(covered.map((d) => d.key));
-  const outer = covered.filter((d) => !d.ancestors.some((k) => keys.has(k)));
+  const outer = covered.filter((d) => d.ancestors.every((k) => !keys.has(k)));
   if (outer.length === 0) {
     return [undefined, 0];
   }
@@ -213,7 +210,7 @@ function historyContext(b: Builder, rel: string, r: LineRange): [Decl | undefine
 // class, a test inside a changed describe — is not emitted again: the outer
 // content already carries it, and shipping the same lines twice spends the
 // consumer's budget on a copy.
-export function expandEnclosing(b: Builder): void {
+function expandEnclosing(b: Builder): void {
   const changedKeys = new Set(b.decls.map((d) => d.key));
   for (const d of b.decls) {
     if (d.ancestors.some((k) => changedKeys.has(k))) {
@@ -233,13 +230,6 @@ export function expandEnclosing(b: Builder): void {
   }
 }
 
-// priorityFor scores a declaration within its role. Exported symbols outrank
-// unexported ones, and a heavily rewritten declaration outranks a one-line
-// edit. The scale is local to a role; the consumer never compares across two.
-export function priorityFor(d: Pick<Decl, "exported" | "changed">): number {
-  return 50 + (d.exported ? 30 : 0) + Math.min(d.changed, 20);
-}
-
 // declDetails is the TypeScript-shaped half of an expansion. The consumer
 // passes it through and renders it generically.
 function declDetails(d: Decl): Record<string, string> {
@@ -257,7 +247,7 @@ function declDetails(d: Decl): Record<string, string> {
 // noteEmptyRoles records why a role produced nothing. A role that is merely
 // absent is indistinguishable from a stage that crashed; each note states the
 // condition that emptied the role, which is knowable here and nowhere else.
-export function noteEmptyRoles(b: Builder): void {
+function noteEmptyRoles(b: Builder): void {
   const present = new Set(b.exps.map((e) => e.role));
   for (const role of roles) {
     if (!present.has(role)) {
@@ -293,7 +283,7 @@ function emptyRoleReason(b: Builder, role: Role): string {
 // sortExpansions puts the output in the order the consumer will rank it: by
 // role, then by the provider's own hint, then by position. The last three keys
 // exist only to break ties the same way twice.
-export function sortExpansions(exps: Expansion[]): void {
+function sortExpansions(exps: Expansion[]): void {
   exps.sort((a, c) => {
     const ra = roleRank(a.role)[0];
     const rc = roleRank(c.role)[0];

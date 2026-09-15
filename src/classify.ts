@@ -9,7 +9,7 @@ import type { Class } from "./envelope.ts";
 import { isDeleted, type Change } from "./git.ts";
 
 // headerScanLines bounds how far into a file a generated header is looked for.
-export const headerScanLines = 40;
+const headerScanLines = 40;
 
 // generatedMarkers are the header lines that mark machine output. Each one is
 // anchored to the start of a comment's text: a substring test also matches a
@@ -66,7 +66,7 @@ const migrationDirs = new Set(["migrations", "migration", "migrate"]);
 
 // migrationNameRe matches the numbered-prefix convention most migration tools
 // write, such as 000123_add_users.up.sql or 1700000000000_add_users.ts.
-const migrationNameRe = /^[0-9]{3,}[_-].+\.(?:sql|go|ts|js)$/;
+const migrationNameRe = /^\d{3,}[_-].+\.(?:sql|go|ts|js)$/;
 
 const testNameRe = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
 const sourceNameRe = /\.[cm]?tsx?$/;

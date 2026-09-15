@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 
 import { build } from "../src/build.ts";
-import { validate, type Envelope, type Expansion } from "../src/envelope.ts";
+import { compareStrings, validate, type Envelope, type Expansion } from "../src/envelope.ts";
 import { fixtureRepo, writeFile } from "./helpers.ts";
 
 const tsconfig =
@@ -93,7 +93,7 @@ export class Badge {
 `,
 };
 
-function run(t: TestContext, edits: Array<[rel: string, from: string, to: string]>, base = files): Envelope {
+function run(t: TestContext, edits: [rel: string, from: string, to: string][], base = files): Envelope {
   const dir = fixtureRepo(t, base);
   for (const [rel, from, to] of edits) {
     const content = readFileSync(join(dir, rel), "utf8");
@@ -137,8 +137,8 @@ test("aliases the checker erases are still found, and a generic interface's sibl
 
   assert.deepEqual(
     ofRole(env, "type")
-      .map((e) => e.symbol)
-      .sort(),
+      .map((e) => e.symbol ?? "")
+      .sort(compareStrings),
     ["Maybe", "Record", "RecordId"],
   );
   assert.deepEqual(

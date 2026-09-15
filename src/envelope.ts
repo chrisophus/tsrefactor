@@ -21,7 +21,7 @@ export const roles = ["enclosing", "caller", "removal", "type", "sibling", "test
 export type Role = (typeof roles)[number];
 
 // unknownRoleRank sorts a role redline does not know after every role it does.
-export const unknownRoleRank = 99;
+const unknownRoleRank = 99;
 
 const rankByRole = new Map<string, number>(roles.map((r, i) => [r, i]));
 
@@ -33,6 +33,7 @@ export function roleRank(role: string): [rank: number, known: boolean] {
 
 export type Class = "source" | "generated" | "vendored" | "test" | "migration" | "lockfile" | "other";
 
+/** @public — part of the wire contract, reached through Envelope. */
 export interface Provider {
   name: string;
   version: string;
@@ -83,10 +84,14 @@ export function validate(env: Envelope | null | undefined): Error | undefined {
   if (env.schemaVersion !== schemaVersion) {
     return new Error(`envelope schema version ${env.schemaVersion}, want ${schemaVersion}`);
   }
+  // validate is given data that may not match the type it claims, which is
+  // the point of validating it, so these checks are not unnecessary.
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
   if ((env.provider?.name ?? "").trim() === "") {
     return new Error("envelope names no provider");
   }
   for (const [i, x] of (env.expansions ?? []).entries()) {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     if (!x.role) {
       return new Error(`expansion ${i} has no role`);
     }
@@ -162,5 +167,7 @@ function expansionToWire(x: Expansion): Record<string, unknown> {
 // compareStrings orders strings by code unit, independent of locale, so a sort
 // gives the same answer on every machine.
 export function compareStrings(a: string, b: string): number {
-  return a < b ? -1 : a > b ? 1 : 0;
+  if (a < b) return -1;
+  if (a > b) return 1;
+  return 0;
 }

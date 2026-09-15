@@ -7,7 +7,7 @@ import { tempDir, writeFile } from "./helpers.ts";
 
 test("classify sorts paths into classes", (t) => {
   const repo = tempDir(t);
-  const cases: Array<[path: string, want: Class, generated: boolean]> = [
+  const cases: [path: string, want: Class, generated: boolean][] = [
     ["src/store/user.ts", "source", false],
     ["src/components/Panel.tsx", "source", false],
     ["src/types/env.d.ts", "source", false],

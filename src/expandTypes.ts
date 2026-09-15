@@ -4,17 +4,17 @@ import { Node, type ClassDeclaration, type Symbol as MorphSymbol, type Type } fr
 
 import { errorMessage, type Builder } from "./builder.ts";
 import { compareStrings } from "./envelope.ts";
-import { priorityFor } from "./expand.ts";
-import { functionValueOf, type Decl } from "./resolve.ts";
+import { priorityFor } from "./priority.ts";
+import { functionValueOf, type Decl } from "./decls.ts";
 
 // siblingsPerInterface caps how many other implementations one interface
 // contributes. A widely implemented interface would otherwise answer a
 // two-line change with every class in the project.
-export const siblingsPerInterface = 12;
+const siblingsPerInterface = 12;
 
 // typeWalkDepth stops the walk descending into deeply nested generic, array,
 // and union types.
-export const typeWalkDepth = 6;
+const typeWalkDepth = 6;
 
 // signatureKinds are the declarations that have a signature to read.
 const signatureKinds: ReadonlySet<string> = new Set(["function", "method", "constructor", "getter", "setter"]);

@@ -3,7 +3,8 @@ import { test } from "node:test";
 
 import { Project } from "ts-morph";
 
-import { countChanged, declsIn, selectedBy, type Decl } from "../src/resolve.ts";
+import { countChanged, declsIn, selectedBy, type Decl } from "../src/decls.ts";
+import { compareStrings } from "../src/envelope.ts";
 
 const mappingFixture = `// Licensed under the fixture license.
 
@@ -63,7 +64,7 @@ function bySymbol(decls: Decl[]): Map<string, Decl> {
 
 test("declsIn names, kinds, spans, and exports", () => {
   const got = bySymbol(declsOf(mappingFixture));
-  const want: Array<[symbol: string, kind: string, start: number, end: number, exported: boolean]> = [
+  const want: [symbol: string, kind: string, start: number, end: number, exported: boolean][] = [
     ["Kind", "enum", 5, 9, true],
     ["greet", "function", 11, 15, true],
     ["Greeter", "interface", 17, 19, true],
@@ -79,7 +80,7 @@ test("declsIn names, kinds, spans, and exports", () => {
     ["Store.add", "method", 36, 39, true],
     ["default", "function", 42, 42, true],
   ];
-  assert.deepEqual([...got.keys()].sort(), want.map(([s]) => s).sort());
+  assert.deepEqual([...got.keys()].sort(compareStrings), want.map(([s]) => s).sort(compareStrings));
   for (const [symbol, kind, start, end, exported] of want) {
     const d = got.get(symbol)!;
     assert.deepEqual(
@@ -112,7 +113,7 @@ test("attached comments stop at a blank line", () => {
 
 test("a changed line maps to the innermost declaration", () => {
   const decls = declsOf(mappingFixture);
-  const cases: Array<[line: number, want: string[]]> = [
+  const cases: [line: number, want: string[]][] = [
     [14, ["greet"]], // the body of greet
     [12, ["greet"]], // its attached comment
     [24, ["Panel"]],
@@ -179,7 +180,7 @@ test("test blocks are declarations named by their describe path", () => {
 
 test("a changed line in a test file maps to the innermost block", () => {
   const decls = declsOf(testsFixture);
-  const cases: Array<[line: number, want: string[]]> = [
+  const cases: [line: number, want: string[]][] = [
     [9, ["Store > adds"]],
     [5, ["Store"]], // a hook inside the describe but outside every test
     [14, ["Store > with %s > counts"]],

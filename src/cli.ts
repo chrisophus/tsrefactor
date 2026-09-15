@@ -39,9 +39,9 @@ function parseContextArgs(args: string[]): ContextArgs {
       continue;
     }
     const eq = arg.indexOf("=");
-    const name = eq < 0 ? arg : arg.slice(0, eq);
+    const name = eq === -1 ? arg : arg.slice(0, eq);
     if (boolFlags.has(name)) {
-      if (eq >= 0) {
+      if (eq !== -1) {
         throw new UsageError(`${name} takes no value`);
       }
       out.json = true;
@@ -51,7 +51,7 @@ function parseContextArgs(args: string[]): ContextArgs {
       throw new UsageError(`unknown flag ${name}`);
     }
     let value: string;
-    if (eq >= 0) {
+    if (eq !== -1) {
       value = arg.slice(eq + 1);
     } else if (i + 1 < args.length) {
       value = args[++i]!;

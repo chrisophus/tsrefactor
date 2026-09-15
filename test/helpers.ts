@@ -49,7 +49,7 @@ export function removeFile(dir: string, rel: string): void {
 // through symlinks (macOS's /var is one) so it compares with what git reports.
 export function tempDir(t: TestContext): string {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), "tsrefactor-")));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => { rmSync(dir, { recursive: true, force: true }); });
   return dir;
 }
 

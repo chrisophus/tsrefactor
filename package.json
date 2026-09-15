@@ -17,11 +17,22 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --test \"test/**/*.test.ts\""
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "knip": "knip",
+    "test": "node --test \"test/**/*.test.ts\"",
+    "check": "npm run typecheck && npm run lint && npm run knip && npm test"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/node": "^22.18.0",
-    "typescript": "~5.9.3"
+    "eslint": "^10.10.0",
+    "eslint-plugin-import-x": "^4.17.1",
+    "eslint-plugin-sonarjs": "^4.2.1",
+    "eslint-plugin-unicorn": "^74.0.0",
+    "knip": "^6.35.1",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.70.0"
   },
   "dependencies": {
     "ts-morph": "~28.0.0"
