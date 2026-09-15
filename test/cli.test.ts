@@ -67,7 +67,7 @@ test("context --changed without --json prints the human summary", (t) => {
     "files: 3 (generated 1, source 1, test 1)",
     "generated: 1 file(s) flagged",
     "symbols: 1",
-    "expansions: 1 (enclosing 1)",
+    "enclosing 1",
   ]) {
     assert.ok(res.stdout.includes(want), `summary missing ${JSON.stringify(want)}:\n${res.stdout}`);
   }

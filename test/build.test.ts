@@ -161,11 +161,12 @@ test("a change with no TypeScript declaration explains every empty role", (t) =>
     writeFile(dir, "README.md", "# fixture, edited\n");
     removeFile(dir, "web/src/money.ts");
   });
-  assert.equal(env.expansions?.length ?? 0, 0);
+  assert.equal(role(env, "enclosing").length, 0);
   for (const r of ["enclosing", "caller", "type", "sibling", "test"]) {
     assert.ok(env.notes?.includes(`no ${r} expansions: the change resolved to no TypeScript declaration`), r);
   }
-  assert.ok(env.notes?.includes("no history expansions: this version of tsrefactor does not produce this role yet"));
+  // History is driven from the manifest, not from declarations.
+  assert.ok(role(env, "history").some((e) => e.file === "web/src/money.ts"), `${JSON.stringify(env.expansions)}`);
 });
 
 test("build is deterministic", (t) => {

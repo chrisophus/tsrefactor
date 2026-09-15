@@ -127,6 +127,15 @@ Additional modules and decisions made during implementation:
   count line.
 - Until a stage lands, `noteEmptyRoles` says "this version of tsrefactor does not produce this role
   yet" rather than claiming the change had nothing for it.
+- **History labelling with classes**: `historyContext` treats a changed class and its own changed
+  members as one declaration (the class), so a span inside a changed class is labelled with the class
+  rather than left unlabelled as a multi-declaration span.
+- **Test blocks need a decl shape before phase 4.** TS tests are top-level call statements
+  (`test("name", () => …)`, `describe(…, () => { it(…) })`), which resolve to no declaration today —
+  observed on this repo's own diff, where history inside `test(...)` bodies is unlabelled. gorefactor's
+  test role groups use sites by *enclosing test function*; the TS port must group by enclosing test
+  block instead, named from the call's string argument(s) (e.g. `describe name > it name`), with the
+  same one-expansion-per-block dedupe.
 
 ### Numeric caps to port exactly (parity with gorefactor's fixture behavior)
 

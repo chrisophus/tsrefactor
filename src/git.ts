@@ -180,6 +180,109 @@ export function parseHunkHeader(line: string): LineRange | undefined {
   return { start, end: start + count - 1 };
 }
 
+// removedRanges returns the base-side spans a diff deletes from path.
+//
+// These are the lines that no longer exist, so they have no working-tree span
+// and hunkRanges cannot report them. Their history is the interesting kind:
+// the reason a line was added is the reason not to delete it, and a diff that
+// only removes code carries none of that on its face.
+export function removedRanges(repo: string, base: string, path: string): LineRange[] {
+  const out = gitOutput(repo, "diff", "-U0", "--no-color", base, "--", path);
+  const ranges: LineRange[] = [];
+  for (const line of out.split("\n")) {
+    if (!line.startsWith("@@")) {
+      continue;
+    }
+    const r = parseRemovedHunkHeader(line);
+    if (r) {
+      ranges.push(r);
+    }
+  }
+  return mergeRanges(ranges);
+}
+
+// HunkSide pairs a hunk's working-tree span with the span it replaced at base.
+//
+// History needs both halves and they are not interchangeable. The revision
+// walked is base, so the -L span has to be in base coordinates: a file whose
+// earlier hunks inserted or deleted lines has a working-tree position that
+// names different lines at base, and `git log -L` will happily trace those
+// instead of erroring. The working-tree half locates the span for the reviewer
+// and maps it onto a changed declaration, since those live in the head tree.
+export interface HunkSide {
+  head: LineRange;
+  base: LineRange;
+}
+
+// hunkSides returns both halves of every hunk that has a base-side span. A hunk
+// that only adds has none, and lines that did not exist before have no prior
+// history to trace.
+export function hunkSides(repo: string, base: string, path: string): HunkSide[] {
+  const out = gitOutput(repo, "diff", "-U0", "--no-color", base, "--", path);
+  const sides: HunkSide[] = [];
+  for (const line of out.split("\n")) {
+    if (!line.startsWith("@@")) {
+      continue;
+    }
+    const head = parseHunkHeader(line);
+    const baseSide = parseRemovedHunkHeader(line);
+    if (head && baseSide) {
+      sides.push({ head, base: baseSide });
+    }
+  }
+  return sides;
+}
+
+// parseRemovedHunkHeader reads the "-start,count" half. A count of zero means
+// the hunk adds without removing, and there is nothing deleted to trace.
+export function parseRemovedHunkHeader(line: string): LineRange | undefined {
+  const i = line.indexOf("-");
+  if (i < 0) {
+    return undefined;
+  }
+  let rest = line.slice(i + 1);
+  const j = rest.search(/[ @+]/);
+  if (j >= 0) {
+    rest = rest.slice(0, j);
+  }
+  const [startStr, countStr] = rest.split(",", 2);
+  const start = parseDecimal(startStr);
+  if (start === undefined || start < 1) {
+    return undefined;
+  }
+  let count = 1;
+  if (countStr !== undefined) {
+    const c = parseDecimal(countStr);
+    if (c === undefined) {
+      return undefined;
+    }
+    count = c;
+  }
+  if (count === 0) {
+    return undefined;
+  }
+  return { start, end: start + count - 1 };
+}
+
+// logLineHistory returns the recent history of a line span, capped at max
+// revisions. The cap is what keeps this role cheap: a file rewritten fifty
+// times would otherwise bury everything else in the envelope.
+//
+// The walk starts at rev rather than at HEAD: the change under review sits at
+// the tip, so a walk from HEAD answers "why is this line here" with the commit
+// the reviewer is already reading. Walking from the base answers it with the
+// history the change was made against.
+export function logLineHistory(repo: string, rev: string, path: string, r: LineRange, max: number): string {
+  return gitOutput(repo, "log", "--no-color", "--date=iso-strict", "-n", String(max), `-L${r.start},${r.end}:${path}`, rev);
+}
+
+// logRemovedHistory traces a span that existed at base and does not now. The
+// span is interpreted against base, the only revision where those line
+// numbers mean anything.
+export function logRemovedHistory(repo: string, base: string, path: string, r: LineRange, max: number): string {
+  return gitOutput(repo, "log", "--no-color", "--date=iso-strict", "-n", String(max), `-L${r.start},${r.end}:${path}`, base);
+}
+
 // mergeRanges sorts spans and folds overlapping or touching ones together, so
 // one declaration spanning several hunks is asked about once.
 export function mergeRanges(input: readonly LineRange[]): LineRange[] {
