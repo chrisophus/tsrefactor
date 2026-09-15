@@ -14,6 +14,7 @@ import { classify } from "./classify.ts";
 import { providerLanguage, providerName, schemaVersion, type Envelope, type File } from "./envelope.ts";
 import { expand } from "./expand.ts";
 import { changedFiles, mergeBase, repoRoot, type Change } from "./git.ts";
+import { promptFragment } from "./prompt.ts";
 import { resolveChanges } from "./resolve.ts";
 
 // Options selects the change to describe.
@@ -69,6 +70,7 @@ export function build(opts: Options): Envelope {
     baseSHA: base,
     files: b.files,
     expansions: b.exps,
+    promptFragment,
     notes: sortedUnique(b.notes),
   };
 }
