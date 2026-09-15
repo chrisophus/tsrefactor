@@ -76,7 +76,7 @@ test("changing the hook puts the page's destructured call through the barrel in 
 });
 
 test("changing the panel's query keys puts the page's JSX usage in the caller role", (t) => {
-  const env = run(t, panelPath, '["buyers", "focus", itemId]', '["buyers", "focus", itemId, "expanded"]');
+  const env = run(t, panelPath, '["items", "detail", itemId]', '["items", "detail", itemId, "expanded"]');
 
   assert.deepEqual(env.files, [{ path: panelPath, class: "source", symbols: ["DetailExpansionPanel"] }]);
   const callers = ofRole(env, "caller");

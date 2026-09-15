@@ -2,8 +2,16 @@
   "name": "tsrefactor",
   "version": "0.1.0",
   "description": "TypeScript context provider for redline: the context envelope for a change",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/chrisophus/tsrefactor.git"
+  },
+  "bugs": {
+    "url": "https://github.com/chrisophus/tsrefactor/issues"
+  },
+  "homepage": "https://github.com/chrisophus/tsrefactor#readme",
   "type": "module",
   "bin": {
     "tsrefactor": "dist/cli.js"

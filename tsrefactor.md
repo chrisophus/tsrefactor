@@ -32,10 +32,10 @@ own repo rather than living inside redline or the application repository. Redlin
 provider discovery is purely config-driven (`internal/provider/provider.go`); a consuming repo only
 adds a `context:` entry to its `.redline.yml` once `tsrefactor` exists on PATH.
 
-**tsrefactor is repo-agnostic.** Nothing in it may assume the application repository, a `ui/` directory, or any
+**tsrefactor is repo-agnostic.** Nothing in it may assume one application repository, a `ui/` directory, or any
 fixed location of TypeScript sources or of the `typescript` package. Development and verification
-must not require a the application repository checkout: the bug described above is reproduced as a self-contained
-fixture (see Verification). the application repository is one consumer, used only for an optional manual check.
+must not require an application checkout: the bug described above is reproduced as a self-contained
+fixture (see Verification). That application is one consumer, used only for an optional manual check.
 
 ## Wire contract (fixed — do not deviate)
 
@@ -216,7 +216,7 @@ speculatively ahead of what exercises it:
 5. **Types + siblings**: `src/expandTypes.ts`.
 6. **Prompt + summary + determinism tests**: `src/prompt.ts`, `src/summary.ts`, and a test that runs
    `context --changed` twice against a fixed revision and asserts byte-identical stdout.
-7. **Wire into a consumer** (e.g. the application repository — outside this repo, optional for tsrefactor's own
+7. **Wire into a consumer** (the application repository — outside this repo, optional for tsrefactor's own
    completion): add to that repo's `.redline.yml`, with `scope` globs matching wherever *that* repo
    keeps its TypeScript:
    ```yaml
@@ -233,7 +233,7 @@ speculatively ahead of what exercises it:
 - **Unit-level**: fixture repos under `test/fixtures/` with a base commit and a follow-up commit,
   asserting exact expansion sets/roles/priorities for known changes (functions, class methods,
   interfaces, hooks) — same style as gorefactor's own `changectx_test.go`.
-- **The bug we found, as a self-contained acceptance fixture** (no the application repository needed): a fixture
+- **The bug we found, as a self-contained acceptance fixture** (no application checkout needed): a fixture
   repo under `test/fixtures/` whose TypeScript sits in a non-root subdirectory (so tsconfig discovery
   is exercised, not assumed) and reproduces the shape of the miss:
   - `useRefreshQueries.ts` — a hook taking a list of query keys and returning a refresh

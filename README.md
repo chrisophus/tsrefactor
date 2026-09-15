@@ -1,6 +1,6 @@
 # tsrefactor
 
-A TypeScript context provider for [redline](https://github.com/chrisophus/redline), the TypeScript
+A TypeScript context provider for redline, the TypeScript
 sibling of gorefactor's `context --changed`. For a change, it emits redline's context envelope:
 every changed file classified, and the code a reviewer needs that the diff does not carry —
 enclosing declarations, callers, the history of changed and deleted lines, the types a changed

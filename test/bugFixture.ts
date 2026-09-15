@@ -31,14 +31,14 @@ export function useRefreshQueries(keys: readonly string[][]) {
 `,
   "app/src/hooks/index.ts": `export { useRefreshQueries } from "./useRefreshQueries";\n`,
   [panelPath]: `export function DetailExpansionPanel({ itemId }: { itemId: string }) {
-  const queryKey = ["buyers", "focus", itemId];
+  const queryKey = ["items", "detail", itemId];
   return <section data-key={queryKey.join("/")}>{itemId}</section>;
 }
 `,
   [pagePath]: `import { useRefreshQueries } from "../hooks";
 import { DetailExpansionPanel } from "../components/detail/DetailExpansionPanel";
 
-const refreshQueryKeys = [["buyers", "list"]];
+const refreshQueryKeys = [["items", "list"]];
 
 export function DashboardPage({ itemId }: { itemId: string }) {
   const { refresh } = useRefreshQueries(refreshQueryKeys);
@@ -54,7 +54,7 @@ export function DashboardPage({ itemId }: { itemId: string }) {
 
 describe("DashboardPage refresh", () => {
   it("invalidates the list", () => {
-    const { refresh } = useRefreshQueries([["buyers", "list"]]);
+    const { refresh } = useRefreshQueries([["items", "list"]]);
     expect(refresh()).toBe(1);
   });
 });
