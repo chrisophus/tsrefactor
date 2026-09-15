@@ -194,6 +194,13 @@ an absent role must never be indistinguishable from a stage that silently crashe
 
 ## Delivery order
 
+**Status (2026-09-16):** phases 1–6 are built and committed on `main`. The bug-reproduction fixture
+passes (`test/acceptance.test.ts`), and end-to-end with redline is verified: `redline run` discovers
+tsrefactor from `.redline.yml`, keeps its envelope in `session.json`, carries the
+`DashboardPage.tsx:7` caller, and reports no TypeScript file as unexamined
+(`test/redline.e2e.test.ts`, skipped when `redline` is not on PATH). Phase 7 — the `.redline.yml`
+entry in the application repository — happens in that repository and is not done here.
+
 Each phase is independently testable and mirrors the module boundaries above, so nothing is built
 speculatively ahead of what exercises it:
 

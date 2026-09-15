@@ -15,70 +15,11 @@ import { test, type TestContext } from "node:test";
 
 import { build } from "../src/build.ts";
 import { validate, type Envelope, type Expansion } from "../src/envelope.ts";
+import { bugFixture, hookPath, pagePath, panelPath } from "./bugFixture.ts";
 import { fixtureRepo, writeFile } from "./helpers.ts";
 
-const hookPath = "app/src/hooks/useRefreshQueries.ts";
-const panelPath = "app/src/components/detail/DetailExpansionPanel.tsx";
-const pagePath = "app/src/pages/DashboardPage.tsx";
-
-const files: Record<string, string> = {
-  "app/tsconfig.json":
-    JSON.stringify(
-      {
-        compilerOptions: {
-          strict: true,
-          jsx: "react-jsx",
-          target: "ES2022",
-          module: "ESNext",
-          moduleResolution: "Bundler",
-          skipLibCheck: true,
-          noEmit: true,
-        },
-        include: ["src"],
-      },
-      null,
-      2,
-    ) + "\n",
-  [hookPath]: `// useRefreshQueries refreshes the queries a view shows.
-export function useRefreshQueries(keys: readonly string[][]) {
-  const refresh = () => keys.length;
-  return { refresh, isRefreshing: false };
-}
-`,
-  "app/src/hooks/index.ts": `export { useRefreshQueries } from "./useRefreshQueries";\n`,
-  [panelPath]: `export function DetailExpansionPanel({ itemId }: { itemId: string }) {
-  const queryKey = ["buyers", "focus", itemId];
-  return <section data-key={queryKey.join("/")}>{itemId}</section>;
-}
-`,
-  [pagePath]: `import { useRefreshQueries } from "../hooks";
-import { DetailExpansionPanel } from "../components/detail/DetailExpansionPanel";
-
-const refreshQueryKeys = [["buyers", "list"]];
-
-export function DashboardPage({ itemId }: { itemId: string }) {
-  const { refresh } = useRefreshQueries(refreshQueryKeys);
-  return (
-    <main>
-      <button onClick={refresh}>Refresh</button>
-      <DetailExpansionPanel itemId={itemId} />
-    </main>
-  );
-}
-`,
-  "app/src/pages/DashboardPage.test.tsx": `import { useRefreshQueries } from "../hooks";
-
-describe("DashboardPage refresh", () => {
-  it("invalidates the list", () => {
-    const { refresh } = useRefreshQueries([["buyers", "list"]]);
-    expect(refresh()).toBe(1);
-  });
-});
-`,
-};
-
 function run(t: TestContext, rel: string, from: string, to: string): Envelope {
-  const dir = fixtureRepo(t, files);
+  const dir = fixtureRepo(t, bugFixture);
   assert.equal(existsSync(join(dir, "node_modules")) || existsSync(join(dir, "app", "node_modules")), false);
   const content = readFileSync(join(dir, rel), "utf8");
   assert.ok(content.includes(from), `fixture ${rel} lacks ${JSON.stringify(from)}`);
