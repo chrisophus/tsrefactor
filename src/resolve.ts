@@ -5,7 +5,7 @@
 // name as a string: two files may both declare `total`, and only a position
 // ties a symbol found one way to a declaration found another.
 
-import { Node, SyntaxKind, type ClassDeclaration, type SourceFile } from "ts-morph";
+import { Node, SyntaxKind, type ClassDeclaration, type ExpressionStatement, type SourceFile } from "ts-morph";
 
 import { errorMessage, sortedUnique, type Builder } from "./builder.ts";
 import type { File } from "./envelope.ts";
@@ -15,20 +15,23 @@ import { loadProject } from "./project.ts";
 // tsSourceRe matches the files this provider resolves symbols in.
 export const tsSourceRe = /\.[cm]?tsx?$/;
 
-// Decl is one top-level declaration, or one member of a top-level class.
+// Decl is one top-level declaration, one member of a top-level class, or one
+// test block (describe/it/test) at the top level or nested in a describe.
 export interface Decl {
   rel: string; // repo-relative path of the file it lives in
   symbol: string; // name, or Class.member for a class member
   scope: string; // file-qualified symbol, opaque to the consumer
   kind: string; // function, class, method, property, interface, type, enum, const, ...
   container: string | undefined; // the class a member belongs to
-  parentKey: string | undefined; // the key of that class's declaration
+  parentKey: string | undefined; // the key of the declaration directly containing this one
+  ancestors: string[]; // keys of every declaration containing this one, outermost first
   start: number; // first line, attached comments included
   end: number; // last line
   exported: boolean;
   changed: number; // how many of its lines the diff touched
   key: string; // rel:offset of the declared name, the identity used across stages
   node: Node;
+  nameNode: Node; // the name references are resolved from
   members: LineRange[] | undefined; // for a class, the spans of its members
 }
 
@@ -105,12 +108,14 @@ export function declsIn(sf: SourceFile, rel: string): Decl[] {
     kind,
     container: undefined,
     parentKey: undefined,
+    ancestors: [],
     start: lineOf(attachedStart(span, text)),
     end: lineOf(span.getEnd()),
     exported,
     changed: 0,
     key: `${rel}:${nameNode.getStart()}`,
     node,
+    nameNode,
     members: undefined,
   });
 
@@ -147,6 +152,8 @@ export function declsIn(sf: SourceFile, rel: string): Decl[] {
       }
     } else if (Node.isExportAssignment(stmt)) {
       out.push(make(stmt, stmt, stmt.isExportEquals() ? "export=" : "default", stmt, "export", true));
+    } else if (Node.isExpressionStatement(stmt)) {
+      out.push(...testBlocks(stmt, [], [], make));
     }
   }
   return out;
@@ -190,10 +197,88 @@ function classDecls(cls: ClassDeclaration, make: MakeDecl): Decl[] {
     const d = make(m, m, `${className}.${name}`, nameNode, kind, exported && !isPrivate);
     d.container = className;
     d.parentKey = classDecl.key;
+    d.ancestors = [classDecl.key];
     members.push(d);
   }
   classDecl.members = members.map((d) => ({ start: d.start, end: d.end }));
   return [classDecl, ...members];
+}
+
+// Test framework entry points. Recognizing a block by the function it calls is
+// classification, not identity: the block's identity is still its position.
+const describeNames: ReadonlySet<string> = new Set(["describe", "context", "suite"]);
+const testNames: ReadonlySet<string> = new Set(["it", "test", "specify", "bench"]);
+
+// testBlocks yields the test block a statement opens, if it opens one, and the
+// blocks nested in it. A test file's code lives in calls rather than
+// declarations, so without these a change inside a test resolves to nothing
+// and a use of a changed symbol from a test has no function to group under.
+//
+// A block is a call to a framework entry point, through .only/.skip/.each
+// chains, that passes a function. It is named from its first argument, joined
+// with the names of the describes around it.
+function testBlocks(stmt: ExpressionStatement, outerNames: string[], outerKeys: string[], make: MakeDecl): Decl[] {
+  const call = stmt.getExpression();
+  if (!Node.isCallExpression(call)) {
+    return [];
+  }
+  const kind = frameworkKind(call);
+  const args = call.getArguments();
+  const body = args.find((a) => Node.isArrowFunction(a) || Node.isFunctionExpression(a));
+  if (!kind || !body || !(Node.isArrowFunction(body) || Node.isFunctionExpression(body))) {
+    return [];
+  }
+  const names = [...outerNames, blockName(args[0])];
+  const block = make(stmt, stmt, names.join(" > "), stmt, kind, false);
+  block.ancestors = [...outerKeys];
+  block.parentKey = outerKeys[outerKeys.length - 1];
+  const out = [block];
+  const inner = body.getBody();
+  if (kind === "describe" && Node.isBlock(inner)) {
+    for (const s of inner.getStatements()) {
+      if (Node.isExpressionStatement(s)) {
+        out.push(...testBlocks(s, names, [...outerKeys, block.key], make));
+      }
+    }
+    block.members = out.filter((d) => d.parentKey === block.key).map((d) => ({ start: d.start, end: d.end }));
+  }
+  return out;
+}
+
+// frameworkKind reports whether a call opens a describe or a test, following
+// the callee through property accesses and curried calls down to the entry
+// point: it.only(...), describe.each(table)(...), test.describe(...).
+function frameworkKind(call: Node): "describe" | "test" | undefined {
+  let callee: Node = call;
+  const properties: string[] = [];
+  for (;;) {
+    if (Node.isCallExpression(callee)) {
+      callee = callee.getExpression();
+    } else if (Node.isPropertyAccessExpression(callee)) {
+      properties.push(callee.getName());
+      callee = callee.getExpression();
+    } else {
+      break;
+    }
+  }
+  if (!Node.isIdentifier(callee)) {
+    return undefined;
+  }
+  const root = callee.getText();
+  if (!describeNames.has(root) && !testNames.has(root)) {
+    return undefined;
+  }
+  return describeNames.has(root) || properties.some((p) => describeNames.has(p)) ? "describe" : "test";
+}
+
+function blockName(arg: Node | undefined): string {
+  if (!arg) {
+    return "(anonymous)";
+  }
+  if (Node.isStringLiteral(arg) || Node.isNoSubstitutionTemplateLiteral(arg)) {
+    return arg.getLiteralText();
+  }
+  return arg.getText().replaceAll(/\s+/g, " ");
 }
 
 function isExported(n: Node): boolean {

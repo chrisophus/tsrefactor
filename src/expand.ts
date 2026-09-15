@@ -11,6 +11,7 @@ import {
   type HunkSide,
   type LineRange,
 } from "./git.ts";
+import { expandUses } from "./expandUses.ts";
 import type { Decl } from "./resolve.ts";
 
 // historyRevisions caps how far back the history role reads per line span. A
@@ -26,9 +27,13 @@ export const historyRangesPerFile = 3;
 // removals shared the history role with surviving lines and had to outrank them.
 export const removedHistoryPriority = 120;
 
+// callerContextLines is how much surrounding code a call site carries. A call
+// alone does not say what it is guarding or what it does with the result.
+export const callerContextLines = 2;
+
 // implementedRoles are the roles this version produces. A role not yet built
 // says so in its note rather than claiming the change had nothing for it.
-const implementedRoles: ReadonlySet<Role> = new Set<Role>(["enclosing", "removal", "history"]);
+const implementedRoles: ReadonlySet<Role> = new Set<Role>(["enclosing", "caller", "removal", "test", "history"]);
 
 // expand runs every stage. The roles that read declarations need declarations;
 // history does not, and is driven from the manifest instead. A change that only
@@ -38,6 +43,7 @@ const implementedRoles: ReadonlySet<Role> = new Set<Role>(["enclosing", "removal
 export function expand(b: Builder): void {
   if (b.decls.length > 0) {
     expandEnclosing(b);
+    expandUses(b);
   }
   expandHistory(b);
   noteEmptyRoles(b);
@@ -180,11 +186,12 @@ export function rankedSides(sides: readonly HunkSide[], limit: number): [HunkSid
 // A span covering more than one changed declaration belongs to none of them:
 // naming one would name whichever happened to be declared first. Such a span is
 // left unlabelled and scored from everything the change touched inside it. A
-// class and its own changed members count as one declaration, the class.
+// declaration and the changed declarations nested in it count as one, the
+// outermost.
 function historyContext(b: Builder, rel: string, r: LineRange): [Decl | undefined, number] {
   const covered = b.decls.filter((d) => d.rel === rel && d.start <= r.end && r.start <= d.end);
   const keys = new Set(covered.map((d) => d.key));
-  const outer = covered.filter((d) => d.parentKey === undefined || !keys.has(d.parentKey));
+  const outer = covered.filter((d) => !d.ancestors.some((k) => keys.has(k)));
   if (outer.length === 0) {
     return [undefined, 0];
   }
@@ -203,13 +210,14 @@ function historyContext(b: Builder, rel: string, r: LineRange): [Decl | undefine
 // expandEnclosing emits the whole declaration each changed hunk sits inside. A
 // hunk without it cannot be judged at all, which is why this role is first.
 //
-// A member whose class is itself changed is not emitted again: the class's
-// content already carries it, and shipping the same method twice spends the
+// A declaration inside another changed declaration — a member of a changed
+// class, a test inside a changed describe — is not emitted again: the outer
+// content already carries it, and shipping the same lines twice spends the
 // consumer's budget on a copy.
 export function expandEnclosing(b: Builder): void {
   const changedKeys = new Set(b.decls.map((d) => d.key));
   for (const d of b.decls) {
-    if (d.parentKey !== undefined && changedKeys.has(d.parentKey)) {
+    if (d.ancestors.some((k) => changedKeys.has(k))) {
       continue;
     }
     b.add({
@@ -269,6 +277,10 @@ function emptyRoleReason(b: Builder, role: Role): string {
   switch (role) {
     case "enclosing":
       return "the changed declarations had no readable content in the working tree";
+    case "caller":
+      return "nothing outside the change references a changed symbol";
+    case "test":
+      return "no test outside the change reaches a changed symbol";
     case "removal":
       return "the change deletes no line git has history for";
     case "history":

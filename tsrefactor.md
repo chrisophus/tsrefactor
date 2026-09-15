@@ -130,6 +130,22 @@ Additional modules and decisions made during implementation:
 - **History labelling with classes**: `historyContext` treats a changed class and its own changed
   members as one declaration (the class), so a span inside a changed class is labelled with the class
   rather than left unlabelled as a multi-declaration span.
+- **Uses (phase 4, as built)**: references come from `findReferencesAsNodes()` on each changed decl's
+  name node (verified to follow barrels, destructured returns, and JSX with no `node_modules`).
+  Import/export specifiers, `export default X`, and JSX closing tags are plumbing and skipped.
+  `call-site` covers direct and method calls, `new`, tagged templates, and a component rendered as a
+  JSX element (`details.syntax = "jsx"`); references to interfaces, type aliases, enums, and
+  namespaces are always `reference-site`. Dedupe key is `file:line:scope` — a deliberate departure
+  from gorefactor's `file:line:col:scope`: a caller's content is the ±2 lines around the use, so two
+  uses of one symbol on one line (`(a: Decl, c: Decl)`) shipped byte-identical expansions twice, as
+  observed on this repo's own diff.
+  A use is a test use when `isTestPath` (classify's test rule) holds; it groups under the innermost
+  enclosing decl by position key.
+- **Test blocks (as built)**: `describe`/`context`/`suite` and `it`/`test`/`specify`/`bench` calls —
+  through `.only`/`.skip`/`.each(...)` chains, requiring a function argument — are decls of kind
+  `describe`/`test`, named `outer > inner` from their first argument, nested with `ancestors` and a
+  `members` rule like classes. Recognizing the framework by callee name is classification only;
+  identity is still the block's position. (Superseded note below kept for the record.)
 - **Test blocks need a decl shape before phase 4.** TS tests are top-level call statements
   (`test("name", () => …)`, `describe(…, () => { it(…) })`), which resolve to no declaration today —
   observed on this repo's own diff, where history inside `test(...)` bodies is unlabelled. gorefactor's

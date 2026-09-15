@@ -117,6 +117,11 @@ function isMigration(p: string, base: string): boolean {
   return migrationNameRe.test(base);
 }
 
+// isTestPath reports whether a repo-relative path is test code.
+export function isTestPath(p: string): boolean {
+  return isTest(p, posix.basename(p));
+}
+
 function isTest(p: string, base: string): boolean {
   return (
     testNameRe.test(base) ||

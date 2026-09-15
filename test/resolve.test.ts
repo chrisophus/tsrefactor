@@ -139,3 +139,55 @@ test("countChanged counts only the overlap", () => {
     3,
   );
 });
+
+const testsFixture = `import { thing } from "./thing";
+
+describe("Store", () => {
+  beforeEach(() => {
+    thing();
+  });
+
+  it("adds", () => {
+    thing();
+  });
+
+  describe.each([1, 2])("with %s", () => {
+    test.only("counts", () => {
+      thing();
+    });
+  });
+});
+
+it.todo("later");
+`;
+
+test("test blocks are declarations named by their describe path", () => {
+  const decls = declsOf(testsFixture);
+  assert.deepEqual(
+    decls.map((d) => [d.symbol, d.kind, d.start, d.end, d.exported]),
+    [
+      ["Store", "describe", 3, 17, false],
+      ["Store > adds", "test", 8, 10, false],
+      ["Store > with %s", "describe", 12, 16, false],
+      ["Store > with %s > counts", "test", 13, 15, false],
+    ],
+  );
+  const got = bySymbol(decls);
+  assert.deepEqual(got.get("Store > with %s > counts")!.ancestors, [got.get("Store")!.key, got.get("Store > with %s")!.key]);
+  assert.equal(got.get("Store > adds")!.parentKey, got.get("Store")!.key);
+});
+
+test("a changed line in a test file maps to the innermost block", () => {
+  const decls = declsOf(testsFixture);
+  const cases: Array<[line: number, want: string[]]> = [
+    [9, ["Store > adds"]],
+    [5, ["Store"]], // a hook inside the describe but outside every test
+    [14, ["Store > with %s > counts"]],
+    [12, ["Store > with %s"]],
+    [19, []],
+  ];
+  for (const [line, want] of cases) {
+    const hits = decls.filter((d) => selectedBy(d, [{ start: line, end: line }])).map((d) => d.symbol);
+    assert.deepEqual(hits, want, `line ${line}`);
+  }
+});

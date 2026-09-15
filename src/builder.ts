@@ -3,7 +3,7 @@
 // revision alone. Ports the builder half of gorefactor's changectx.go.
 
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join, relative, sep } from "node:path";
 
 import type { Project, SourceFile } from "ts-morph";
 
@@ -31,6 +31,19 @@ export class Builder {
 
   abs(rel: string): string {
     return join(this.repo, rel);
+  }
+
+  // rel converts an absolute path to the repo-relative, forward-slash form the
+  // envelope carries. A path outside the work tree, or inside node_modules, is
+  // refused: an absolute path would name a machine the reviewer is not on, and
+  // a dependency's own code is not the change's context.
+  rel(abs: string): string | undefined {
+    const r = relative(this.repo, abs);
+    if (r === "" || r === ".." || r.startsWith(`..${sep}`) || isAbsolute(r)) {
+      return undefined;
+    }
+    const slashed = r.split(sep).join("/");
+    return slashed.split("/").includes("node_modules") ? undefined : slashed;
   }
 
   // sourceFile returns the loaded syntax tree for a file, adding it to the

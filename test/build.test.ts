@@ -95,7 +95,7 @@ test("a hunk inside a method and a function resolves to exactly those declaratio
   assert.deepEqual(total!.details, { kind: "function", exported: "true", changedLines: "1" });
 
   assert.ok(!env.notes?.some((n) => n.startsWith("type-check")), `unexpected type-check notes: ${env.notes}`);
-  assert.ok(env.notes?.includes("no caller expansions: this version of tsrefactor does not produce this role yet"));
+  assert.ok(env.notes?.includes("no caller expansions: nothing outside the change references a changed symbol"));
 });
 
 test("a change to a class outside its members emits the class once", (t) => {
@@ -212,4 +212,21 @@ test("a nodenext ESM package does not report module-format errors as type errors
     env.notes?.some((n) => /^2 ESM\/CommonJS diagnostic\(s\) were dropped: /.test(n)),
     `${env.notes}`,
   );
+});
+
+test("uses of a changed symbol are callers once per line, and type uses are reference sites", (t) => {
+  const env = run(t, (dir) => {
+    edit(dir, "web/src/money.ts", "export type Money = number;", "export type Money = number | bigint;");
+  });
+  const callers = role(env, "caller");
+  // store.ts:21 names Money twice — `(cents: Money): Money` — and ships once.
+  // The import on line 3 only moves the name and is not a use.
+  assert.deepEqual(
+    callers.map((e) => [e.file, e.details?.["line"], e.details?.["kind"], e.details?.["callerSymbol"]]),
+    [
+      ["web/src/store.ts", "10", "reference-site", "web/src/store.ts:Store.insert"],
+      ["web/src/store.ts", "21", "reference-site", "web/src/store.ts:total"],
+    ],
+  );
+  assert.ok(callers.every((e) => e.symbol === "Money" && e.scope === "web/src/money.ts:Money"));
 });
