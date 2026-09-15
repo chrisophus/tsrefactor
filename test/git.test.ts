@@ -1,7 +1,17 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { changedFiles, gitOutput, gitRepoEnvVars, mergeBase, parseNameStatus, sanitizedGitEnv } from "../src/git.ts";
+import {
+  changedFiles,
+  gitOutput,
+  gitRepoEnvVars,
+  hunkRanges,
+  mergeBase,
+  mergeRanges,
+  parseHunkHeader,
+  parseNameStatus,
+  sanitizedGitEnv,
+} from "../src/git.ts";
 import { fixtureRepo, git, removeFile, writeFile } from "./helpers.ts";
 
 test("parseNameStatus keeps the new path of a rename or copy", () => {
@@ -76,4 +86,46 @@ test("mergeBase falls back to the ref when there is no common ancestor", (t) => 
 
   assert.equal(mergeBase(dir, first), first);
   assert.throws(() => mergeBase(dir, "no-such-ref"), /git rev-parse --verify no-such-ref\^\{commit\}/);
+});
+
+test("parseHunkHeader reads the working-tree side", () => {
+  assert.deepEqual(parseHunkHeader("@@ -40,6 +39,0 @@ function x() {"), { start: 39, end: 39 });
+  assert.deepEqual(parseHunkHeader("@@ -1 +1 @@"), { start: 1, end: 1 });
+  assert.deepEqual(parseHunkHeader("@@ -3,2 +3,5 @@"), { start: 3, end: 7 });
+  assert.deepEqual(parseHunkHeader("@@ -1,2 +0,0 @@"), { start: 1, end: 1 });
+  assert.equal(parseHunkHeader("@@ -1,2 +x,3 @@"), undefined);
+});
+
+test("mergeRanges folds overlapping and touching spans", () => {
+  assert.deepEqual(
+    mergeRanges([
+      { start: 10, end: 12 },
+      { start: 4, end: 5 },
+      { start: 13, end: 14 },
+      { start: 4, end: 4 },
+      { start: 20, end: 20 },
+    ]),
+    [
+      { start: 4, end: 5 },
+      { start: 10, end: 14 },
+      { start: 20, end: 20 },
+    ],
+  );
+  assert.deepEqual(mergeRanges([]), []);
+});
+
+test("hunkRanges maps a file's hunks to working-tree spans", (t) => {
+  const lines = Array.from({ length: 20 }, (_, i) => `export const v${i + 1} = ${i + 1};`);
+  const dir = fixtureRepo(t, { "a.ts": lines.join("\n") + "\n" });
+  const base = git(dir, "rev-parse", "HEAD").trim();
+  const edited = [...lines];
+  edited[2] = "export const v3 = 30;";
+  edited[3] = "export const v4 = 40;";
+  edited.splice(15, 2); // delete v16 and v17
+  writeFile(dir, "a.ts", edited.join("\n") + "\n");
+
+  assert.deepEqual(hunkRanges(dir, base, "a.ts"), [
+    { start: 3, end: 4 },
+    { start: 15, end: 15 },
+  ]);
 });

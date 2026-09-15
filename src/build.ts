@@ -9,17 +9,12 @@
 
 import { realpathSync } from "node:fs";
 
+import { Builder, errorMessage, sortedUnique } from "./builder.ts";
 import { classify } from "./classify.ts";
-import {
-  compareStrings,
-  providerLanguage,
-  providerName,
-  schemaVersion,
-  type Envelope,
-  type Expansion,
-  type File,
-} from "./envelope.ts";
+import { providerLanguage, providerName, schemaVersion, type Envelope, type File } from "./envelope.ts";
+import { expand } from "./expand.ts";
 import { changedFiles, mergeBase, repoRoot, type Change } from "./git.ts";
+import { resolveChanges } from "./resolve.ts";
 
 // Options selects the change to describe.
 export interface Options {
@@ -33,17 +28,6 @@ export interface Options {
   version: string;
 }
 
-// Builder carries the state of one build call. Every stage appends to it and
-// nothing reads back, which is what keeps the output a function of the
-// revision alone.
-interface Builder {
-  repo: string;
-  base: string;
-  files: File[];
-  exps: Expansion[];
-  notes: string[];
-}
-
 // build produces the envelope for the change between opts.baseRef's merge base
 // and the working tree. Only three failures abort it — locating the work tree,
 // resolving the merge base, listing the changed files — and every later stage
@@ -54,7 +38,7 @@ export function build(opts: Options): Envelope {
   try {
     repo = repoRoot(root);
   } catch (err) {
-    throw new Error(`locate the work tree at ${root}: ${message(err)}`);
+    throw new Error(`locate the work tree at ${root}: ${errorMessage(err)}`);
   }
   try {
     repo = realpathSync(repo);
@@ -65,19 +49,21 @@ export function build(opts: Options): Envelope {
   try {
     base = mergeBase(repo, opts.baseRef);
   } catch (err) {
-    throw new Error(`resolve the merge base with ${opts.baseRef}: ${message(err)}`);
+    throw new Error(`resolve the merge base with ${opts.baseRef}: ${errorMessage(err)}`);
   }
   let changes: Change[];
   try {
     changes = changedFiles(repo, base);
   } catch (err) {
-    throw new Error(`list the files changed since ${base}: ${message(err)}`);
+    throw new Error(`list the files changed since ${base}: ${errorMessage(err)}`);
   }
 
-  const b: Builder = { repo, base, files: [], exps: [], notes: [] };
+  const b = new Builder(repo, base);
   manifest(b, changes);
+  resolveChanges(b, changes);
+  expand(b);
 
-  const env: Envelope = {
+  return {
     schemaVersion,
     provider: { name: providerName, version: opts.version, language: providerLanguage },
     baseSHA: base,
@@ -85,25 +71,14 @@ export function build(opts: Options): Envelope {
     expansions: b.exps,
     notes: sortedUnique(b.notes),
   };
-  return env;
 }
 
 // manifest classifies every changed path.
-function manifest(b: Builder, changes: Change[]): void {
+function manifest(b: Builder, changes: readonly Change[]): void {
   for (const c of changes) {
     const [cls, generated] = classify(b.repo, c);
     const f: File = { path: c.path, class: cls };
     if (generated) f.generated = true;
     b.files.push(f);
   }
-}
-
-// sortedUnique drops empty and repeated strings and sorts the rest, so two runs
-// of the same revision report the same list in the same order.
-export function sortedUnique(input: readonly string[]): string[] {
-  return [...new Set(input.filter((s) => s !== ""))].sort(compareStrings);
-}
-
-function message(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }

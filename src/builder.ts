@@ -1,0 +1,127 @@
+// Builder carries the state of one build call. Every stage appends to it and
+// nothing reads back, which is what keeps the output a function of the
+// revision alone. Ports the builder half of gorefactor's changectx.go.
+
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+
+import type { Project, SourceFile } from "ts-morph";
+
+import { compareStrings, type Expansion, type File } from "./envelope.ts";
+import type { LineRange } from "./git.ts";
+import { declsIn, type Decl } from "./resolve.ts";
+
+export class Builder {
+  readonly repo: string;
+  readonly base: string;
+  files: File[] = [];
+  exps: Expansion[] = [];
+  notes: string[] = [];
+  decls: Decl[] = [];
+  ranges = new Map<string, LineRange[]>();
+  project: Project | undefined;
+
+  private readonly lines = new Map<string, string[]>();
+  private readonly declCache = new Map<string, Decl[]>();
+
+  constructor(repo: string, base: string) {
+    this.repo = repo;
+    this.base = base;
+  }
+
+  abs(rel: string): string {
+    return join(this.repo, rel);
+  }
+
+  // sourceFile returns the loaded syntax tree for a file, adding it to the
+  // project when the load did not include it. A file outside every tsconfig
+  // still gets its declarations mapped.
+  sourceFile(rel: string): SourceFile | undefined {
+    if (!this.project) {
+      return undefined;
+    }
+    const abs = this.abs(rel);
+    return this.project.getSourceFile(abs) ?? this.project.addSourceFileAtPathIfExists(abs);
+  }
+
+  // declsForRel returns the top-level declarations of a file, parsed once and
+  // kept. It is how an expansion found by position reports the declaration it
+  // sits in.
+  declsForRel(rel: string): Decl[] {
+    const cached = this.declCache.get(rel);
+    if (cached) {
+      return cached;
+    }
+    const sf = this.sourceFile(rel);
+    const ds = sf ? declsIn(sf, rel) : [];
+    this.declCache.set(rel, ds);
+    return ds;
+  }
+
+  // enclosingAt returns the innermost declaration containing a line of a file:
+  // a class member rather than its class.
+  enclosingAt(rel: string, line: number): Decl | undefined {
+    let found: Decl | undefined;
+    for (const d of this.declsForRel(rel)) {
+      if (d.start <= line && line <= d.end && (!found || d.end - d.start <= found.end - found.start)) {
+        found = d;
+      }
+    }
+    return found;
+  }
+
+  // sourceLines reads a working-tree file once and keeps its lines for slicing.
+  sourceLines(rel: string): string[] {
+    const cached = this.lines.get(rel);
+    if (cached) {
+      return cached;
+    }
+    let lines: string[] = [];
+    try {
+      lines = readFileSync(this.abs(rel), "utf8").replaceAll("\r\n", "\n").split("\n");
+    } catch {
+      // an unreadable file slices to nothing, and add drops the expansion
+    }
+    this.lines.set(rel, lines);
+    return lines;
+  }
+
+  // slice returns lines start..end of a file, inclusive and 1-based.
+  slice(rel: string, start: number, end: number): string {
+    const lines = this.sourceLines(rel);
+    if (lines.length === 0 || start < 1) {
+      return "";
+    }
+    const last = Math.min(end, lines.length);
+    if (start > last) {
+      return "";
+    }
+    return lines.slice(start - 1, last).join("\n") + "\n";
+  }
+
+  // wholeFileRange covers a file the diff reports without hunks, such as one
+  // that git has not tracked yet.
+  wholeFileRange(rel: string): LineRange[] {
+    const n = this.sourceLines(rel).length;
+    return n === 0 ? [] : [{ start: 1, end: n }];
+  }
+
+  // add records an expansion, dropping ones with no content so an empty string
+  // never reaches the consumer as if it were context.
+  add(e: Expansion): void {
+    if (e.content.trim() === "") {
+      return;
+    }
+    this.exps.push(e);
+  }
+}
+
+// sortedUnique drops empty and repeated strings and sorts the rest, so two runs
+// of the same revision report the same list in the same order.
+export function sortedUnique(input: readonly string[]): string[] {
+  return [...new Set(input.filter((s) => s !== ""))].sort(compareStrings);
+}
+
+export function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}

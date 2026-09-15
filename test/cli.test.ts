@@ -40,7 +40,7 @@ test("context --changed --json emits a valid envelope with a classified manifest
   assert.deepEqual(env.files, [
     { path: "web/src/client.ts", class: "generated", generated: true },
     { path: "web/src/order.test.ts", class: "test" },
-    { path: "web/src/order.ts", class: "source" },
+    { path: "web/src/order.ts", class: "source", symbols: ["total"] },
   ]);
   assert.equal(res.stdout, JSON.stringify(env, null, 2) + "\n");
 });
@@ -66,7 +66,8 @@ test("context --changed without --json prints the human summary", (t) => {
     "provider tsrefactor",
     "files: 3 (generated 1, source 1, test 1)",
     "generated: 1 file(s) flagged",
-    "expansions: 0 (none)",
+    "symbols: 1",
+    "expansions: 1 (enclosing 1)",
   ]) {
     assert.ok(res.stdout.includes(want), `summary missing ${JSON.stringify(want)}:\n${res.stdout}`);
   }

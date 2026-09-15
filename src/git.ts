@@ -124,6 +124,82 @@ export function parseNameStatus(s: string): Change[] {
   return out;
 }
 
+// LineRange is an inclusive 1-based span of lines in the working-tree file.
+export interface LineRange {
+  start: number;
+  end: number;
+}
+
+// hunkRanges returns the working-tree line spans the diff touches in path. A
+// hunk that only deletes lines has no working-tree span of its own, so it is
+// reported as the single line the deletion sits after, which is where the
+// reviewer has to look.
+export function hunkRanges(repo: string, base: string, path: string): LineRange[] {
+  const out = gitOutput(repo, "diff", "-U0", "--no-color", base, "--", path);
+  const ranges: LineRange[] = [];
+  for (const line of out.split("\n")) {
+    if (!line.startsWith("@@")) {
+      continue;
+    }
+    const r = parseHunkHeader(line);
+    if (r) {
+      ranges.push(r);
+    }
+  }
+  return mergeRanges(ranges);
+}
+
+// parseHunkHeader reads the "+start,count" half of a unified diff hunk header.
+export function parseHunkHeader(line: string): LineRange | undefined {
+  const i = line.indexOf("+");
+  if (i < 0) {
+    return undefined;
+  }
+  let rest = line.slice(i + 1);
+  const j = rest.search(/[ @]/);
+  if (j >= 0) {
+    rest = rest.slice(0, j);
+  }
+  const [startStr, countStr] = rest.split(",", 2);
+  const start = parseDecimal(startStr);
+  if (start === undefined) {
+    return undefined;
+  }
+  let count = 1;
+  if (countStr !== undefined) {
+    const c = parseDecimal(countStr);
+    if (c === undefined) {
+      return undefined;
+    }
+    count = c;
+  }
+  if (count === 0) {
+    const at = Math.max(start, 1);
+    return { start: at, end: at };
+  }
+  return { start, end: start + count - 1 };
+}
+
+// mergeRanges sorts spans and folds overlapping or touching ones together, so
+// one declaration spanning several hunks is asked about once.
+export function mergeRanges(input: readonly LineRange[]): LineRange[] {
+  const sorted = [...input].sort((a, b) => a.start - b.start || a.end - b.end);
+  const out: LineRange[] = [];
+  for (const r of sorted) {
+    const last = out[out.length - 1];
+    if (last && r.start <= last.end + 1) {
+      last.end = Math.max(last.end, r.end);
+      continue;
+    }
+    out.push({ ...r });
+  }
+  return out;
+}
+
+function parseDecimal(s: string | undefined): number | undefined {
+  return s !== undefined && /^\d+$/.test(s) ? Number(s) : undefined;
+}
+
 export function splitNUL(s: string): string[] {
   return s.split("\x00").filter((f) => f !== "");
 }
