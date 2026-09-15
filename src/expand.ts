@@ -11,6 +11,7 @@ import {
   type HunkSide,
   type LineRange,
 } from "./git.ts";
+import { expandSiblings, expandTypes } from "./expandTypes.ts";
 import { expandUses } from "./expandUses.ts";
 import type { Decl } from "./resolve.ts";
 
@@ -31,10 +32,6 @@ export const removedHistoryPriority = 120;
 // alone does not say what it is guarding or what it does with the result.
 export const callerContextLines = 2;
 
-// implementedRoles are the roles this version produces. A role not yet built
-// says so in its note rather than claiming the change had nothing for it.
-const implementedRoles: ReadonlySet<Role> = new Set<Role>(["enclosing", "caller", "removal", "test", "history"]);
-
 // expand runs every stage. The roles that read declarations need declarations;
 // history does not, and is driven from the manifest instead. A change that only
 // deletes files resolves to no declaration at all, and that is precisely where
@@ -44,6 +41,8 @@ export function expand(b: Builder): void {
   if (b.decls.length > 0) {
     expandEnclosing(b);
     expandUses(b);
+    expandTypes(b);
+    expandSiblings(b);
   }
   expandHistory(b);
   noteEmptyRoles(b);
@@ -271,9 +270,6 @@ function emptyRoleReason(b: Builder, role: Role): string {
   if (b.decls.length === 0 && role !== "history" && role !== "removal") {
     return "the change resolved to no TypeScript declaration";
   }
-  if (!implementedRoles.has(role)) {
-    return "this version of tsrefactor does not produce this role yet";
-  }
   switch (role) {
     case "enclosing":
       return "the changed declarations had no readable content in the working tree";
@@ -281,6 +277,10 @@ function emptyRoleReason(b: Builder, role: Role): string {
       return "nothing outside the change references a changed symbol";
     case "test":
       return "no test outside the change reaches a changed symbol";
+    case "type":
+      return "the changed signatures name no type declared outside the change";
+    case "sibling":
+      return "no changed class implements an interface declared in this project";
     case "removal":
       return "the change deletes no line git has history for";
     case "history":

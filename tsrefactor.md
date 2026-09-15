@@ -146,6 +146,22 @@ Additional modules and decisions made during implementation:
   `describe`/`test`, named `outer > inner` from their first argument, nested with `ancestors` and a
   `members` rule like classes. Recognizing the framework by callee name is classification only;
   identity is still the block's position. (Superseded note below kept for the record.)
+- **Types (phase 5, as built)**: two walks per changed function/method/constructor/accessor. First the
+  names written in parameter and return annotations (and a variable's own annotation), resolved
+  through imports — needed because the checker erases aliases of primitives (`id: RecordId` has type
+  `string`). Then the checker's types, depth 6, through unions, intersections, tuples, arrays, type
+  arguments, alias type arguments, and anonymous function types' signatures — for inferred types.
+  Only interface/type-alias/class/enum declarations inside the work tree count (enum members map to
+  their enum); library types are walked through but never emitted. Identity is the declaration node.
+  A type is emitted once across all changed decls, and never when it is itself changed.
+- **Siblings (phase 5, as built)**: changed classes and classes of changed members → project
+  interfaces (and object-literal type aliases) with at least one required member → other project
+  classes that satisfy the same interface. "Satisfies" is `checker.isTypeAssignableTo` (public in the
+  bundled TypeScript 6.0) or an explicit `implements` clause resolving to that interface — the clause
+  is what catches generic interfaces, whose declared type instantiations are not assignable to.
+  Known gap: a generic interface implemented structurally with no clause is not matched. Only classes
+  are implementations; a changed interface does not itself look for siblings.
+- With all seven roles built, the "does not produce this role yet" placeholder is gone.
 - **Test blocks need a decl shape before phase 4.** TS tests are top-level call statements
   (`test("name", () => …)`, `describe(…, () => { it(…) })`), which resolve to no declaration today —
   observed on this repo's own diff, where history inside `test(...)` bodies is unlabelled. gorefactor's

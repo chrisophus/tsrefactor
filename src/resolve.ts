@@ -286,9 +286,15 @@ function isExported(n: Node): boolean {
 }
 
 // isFunctionValue reports whether an initializer is a function, directly or
-// through the wrappers components are commonly declared with: memo(() => ...),
-// forwardRef(function ...), and type assertions.
+// through the wrappers components are commonly declared with.
 function isFunctionValue(init: Node | undefined): boolean {
+  return functionValueOf(init) !== undefined;
+}
+
+// functionValueOf returns the function an initializer holds, unwrapping the
+// forms components are commonly declared with: memo(() => ...),
+// forwardRef(function ...), parentheses, and type assertions.
+export function functionValueOf(init: Node | undefined): Node | undefined {
   let n = init;
   while (
     n &&
@@ -300,13 +306,13 @@ function isFunctionValue(init: Node | undefined): boolean {
   ) {
     n = n.getExpression();
   }
-  if (!n) return false;
-  if (Node.isArrowFunction(n) || Node.isFunctionExpression(n)) return true;
+  if (!n) return undefined;
+  if (Node.isArrowFunction(n) || Node.isFunctionExpression(n)) return n;
   if (Node.isCallExpression(n)) {
     const first = n.getArguments()[0];
-    return first !== undefined && (Node.isArrowFunction(first) || Node.isFunctionExpression(first));
+    if (first !== undefined && (Node.isArrowFunction(first) || Node.isFunctionExpression(first))) return first;
   }
-  return false;
+  return undefined;
 }
 
 // isBindingName reports whether an identifier inside a destructuring pattern
