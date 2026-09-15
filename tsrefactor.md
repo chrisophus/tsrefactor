@@ -29,8 +29,13 @@ re-exports, and barrel files the way `go/types`'s `Uses` map already does for Go
 
 This is a new standalone repo, pure Node.js/TypeScript (decided), analogous to how gorefactor is its
 own repo rather than living inside redline or the application repository. Redline needs **no source changes** —
-provider discovery is purely config-driven (`internal/provider/provider.go`); this only requires a
-`context:` entry in the application repository's `.redline.yml` once `tsrefactor` exists on PATH.
+provider discovery is purely config-driven (`internal/provider/provider.go`); a consuming repo only
+adds a `context:` entry to its `.redline.yml` once `tsrefactor` exists on PATH.
+
+**tsrefactor is repo-agnostic.** Nothing in it may assume the application repository, a `ui/` directory, or any
+fixed location of TypeScript sources or of the `typescript` package. Development and verification
+must not require a the application repository checkout: the bug described above is reproduced as a self-contained
+fixture (see Verification). the application repository is one consumer, used only for an optional manual check.
 
 ## Wire contract (fixed — do not deviate)
 
@@ -64,7 +69,7 @@ Verified directly against redline's source (`internal/envelope/envelope.go`,
     symbols?: string[]
   }
   interface Expansion {
-    role: "enclosing" | "caller" | "type" | "sibling" | "test" | "history"
+    role: "enclosing" | "caller" | "removal" | "type" | "sibling" | "test" | "history"
     priority?: number     // omit key when 0 — higher = more valuable, ranks only within a role
     symbol?: string
     scope?: string
@@ -75,7 +80,8 @@ Verified directly against redline's source (`internal/envelope/envelope.go`,
     details?: Record<string, string>
   }
   ```
-  Redline ranks by `role` (fixed order enclosing→caller→type→sibling→test→history) then `priority`
+  Redline ranks by `role` (fixed order enclosing→caller→removal→type→sibling→test→history, per
+  `roleRank` in redline's `envelope.go`) then `priority`
   descending — a provider cannot promote a role. An unknown role ranks last and is reported by name,
   never silently dropped. **Never truncate to a self-imposed budget** — emit everything resolved;
   redline's 250k-token ceiling does the cutting.
@@ -91,14 +97,14 @@ implementation — the algorithms are already fully specified there, not to be r
 
 | Module (new) | Ports | Job |
 |---|---|---|
-| `src/git.ts` | `git.go` | Merge-base, changed paths (tracked + untracked, `--name-status -z` + `ls-files --others`), hunk ranges (`git diff -U0`), line history (`git log -L`). **Same exact command list, same env-scrubbing** (strip `GIT_DIR`/`GIT_INDEX_FILE`/`GIT_WORK_TREE`/`GIT_OBJECT_DIRECTORY`/`GIT_ALTERNATE_OBJECT_DIRECTORIES`/`GIT_PREFIX`/`GIT_COMMON_DIR`/`GIT_QUARANTINE_PATH` from the child's env before every git call — this is not Go-specific, port it verbatim). |
-| `src/classify.ts` | `classify.go` | File classification. Reuse gorefactor's exact lockfile/migration name lists (`package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, etc. are cross-language already). TS-specific: generated-name suffixes `.generated.ts`, `.gen.ts`, `.d.ts` (careful: `.d.ts` is nearly always hand-written for ambient types in this repo — verify against real files before treating as generated) and prefixes matching this repo's codegen dirs (check for an OpenAPI-generated TS client, similar to `oas_*` in Go); anchored "DO NOT EDIT"/"@generated" header scan, same 40-line cap. Test suffix: `.test.ts(x)`, `.spec.ts(x)`. |
-| `src/project.ts` | `goload.go` | **The single ts-morph `Project` load.** Construct from `tsconfig.json` (search upward from `--in`, matching `ui/` in the application repository), `Project.getProgram()` triggers the type-check once. No caching layer needed — like `goload`, called exactly once per `Build`, and only if at least one changed path is `.ts`/`.tsx`. |
+| `src/git.ts` | `git.go` (+ `analyzer/gitenv.go`) | Merge-base (with `mergeBase`'s fallback: if `git merge-base <ref> HEAD` fails, use `git rev-parse --verify <ref>^{commit}` so a first commit still produces an envelope), changed paths (tracked + untracked, `--name-status -z` + `ls-files --others`), hunk ranges (`git diff -U0`), line history (`git log -L`). **Same exact command list, same env-scrubbing** (strip `GIT_DIR`/`GIT_INDEX_FILE`/`GIT_WORK_TREE`/`GIT_OBJECT_DIRECTORY`/`GIT_ALTERNATE_OBJECT_DIRECTORIES`/`GIT_PREFIX`/`GIT_COMMON_DIR`/`GIT_QUARANTINE_PATH` from the child's env before every git call — this is not Go-specific, port it verbatim). |
+| `src/classify.ts` | `classify.go` | File classification. Reuse gorefactor's exact lockfile/migration name lists (`package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, etc. are cross-language already). TS-specific: generated-name suffixes `.generated.ts`, `.gen.ts`, `.d.ts` (careful: `.d.ts` is nearly always hand-written for ambient types in this repo — verify against real files before treating as generated) — no repo-specific codegen prefixes baked in; anchored header scan, same 40-line cap, but the regex must cover TS conventions (`@generated`, `DO NOT EDIT`, `eslint-disable` + `generated` banners) rather than Go's `Code generated … DO NOT EDIT` only. `migrationNameRe` accepts only `.sql`/`.go` in Go — extend to `.ts`/`.js`. Test suffix: `.test.ts(x)`, `.spec.ts(x)`. |
+| `src/project.ts` | `loadModule` + `index.unit` in `resolve.go` (which call `internal/goload`) | **The single ts-morph `Project` load.** No hardcoded paths: `--in` defaults to cwd; locate the nearest `tsconfig.json` searching upward from it, bounded by the git top-level. If that config is a solution-style root (`files: []` + `references`, common in Vite setups), follow the references and load every referenced project's files. If no tsconfig is found, fall back to a default-options project over the changed files, with a note. The compiler is ts-morph's bundled `typescript` — never resolved from the target repo — so an uninstalled `node_modules` only degrades imported-type resolution into `notes[]`. `getProgram()` triggers the type-check once; called exactly once per `Build`, and only if at least one changed path is `.ts`/`.tsx`. Port `index.unit`'s fallback: a changed file the project doesn't include (or that fails to parse into it) is parsed standalone so it still gets enclosing decls, without types. |
 | `src/resolve.ts` | `resolve.go` | Map each changed hunk's line range to its enclosing top-level declaration. Decl shapes to handle (wider than Go's func/method/type/var/const): function declaration, `const x = (...) => ...` / `function expression`, class + class method, object literal method, exported `interface`/`type` alias, and — TS/React-specific — a component defined as a `const Foo: FC<Props> = (...) => ...`. Use `sourceFile.getDescendantAtPos()` + ascend to nearest declaration-shaped ancestor, analogous to `declsIn`. Track `(file, start-pos)` as the identity key the way `resolve.go` tracks `types.Object.Pos()` — this is what ties a symbol found one way to a decl found another way; do not use name-string matching for identity anywhere in this pipeline. |
-| `src/expand.ts` | `expand.go` | Orchestration + `priorityFor` (identical formula: `50 + (exported?30:0) + min(changed,20)`, so 50..100), history-role driving from the manifest (not decls), `noteEmptyRoles`, `sortExpansions` (role rank → priority desc → file → startLine → symbol → content, stable). |
+| `src/expand.ts` | `expand.go` | Orchestration + `priorityFor` (identical formula: `50 + (exported?30:0) + min(changed,20)`, so 50..100), history driving from the manifest (not decls): changed-line spans → `history` role; **deleted-line spans → `removal` role** at fixed priority `removedHistoryPriority` (`expandRemovedHistory`), `rankedSides`/`rankedRanges` longest-span-first capping with a note per dropped span count, `noteEmptyRoles` over all seven roles, `sortExpansions` (role rank → priority desc → file → startLine → symbol → content, stable). |
 | `src/expandUses.ts` | `expand_uses.go` | **The load-bearing module — this is what fixes the bug.** For each changed decl, use ts-morph's `Node#findReferencesAsNodes()` (backed by the real LanguageService, so it resolves through destructuring, re-exports, and barrel `index.ts` files) to get every real reference, not text search. Classify `call-site` vs `reference-site` by checking whether the reference's parent is a `CallExpression`/`JsxOpeningElement` (JSX component usage is a TS-specific "call-site" concept Go doesn't have — decide whether to fold it into `call-site` or add reasoning in `details`). Skip references inside any changed declaration's own span (mirrors `insideChanged`). Partition non-test → `caller` role (±2 lines context, same as `callerContextLines = 2`); test → grouped-by-enclosing-test-function `test` role expansions, same dedupe-by-`(function, symbol)` logic that stopped gorefactor's own duplicate-test-row bug. |
-| `src/expandTypes.ts` | `expand_types.go` | For a changed function/component's signature, walk parameter/return/prop types (ts-morph `Type` walking through unions/arrays/promises, same depth-6 cutoff) emitting `type`-role expansions for each named type/interface declared outside the change. For sibling implementations of a changed `interface`: TS structural typing means "implements" isn't nominal like Go — use `checker.isTypeAssignableTo` against every other declared type/interface in the project (skip global/library ones the same way gorefactor skips anything outside the loaded module), same `siblingsPerInterface = 12` cap. |
-| `src/prompt.ts` | `prompt.go` | Static TypeScript-idiom prose, structurally parallel to gorefactor's seven sections but for TS/React: promise/async error handling and unhandled rejections; `unknown` vs `any` and narrowing; nullish (`null` vs `undefined`) semantics; structural typing and when an interface is redundant beside its only implementation; React hook rules (deps arrays, stale closures, effect cleanup); test convention in this repo (co-located `*.test.tsx`, RTL patterns) — check a few existing `ui/src/**/*.test.tsx` files for the actual house style before writing this section; load-bearing idioms (discriminated unions + exhaustiveness checks, early return over nesting). Keep it about idiom only — no output-format rules (that's redline's harness half). |
+| `src/expandTypes.ts` | `expand_types.go` | For a changed function/component's signature, walk parameter/return/prop types (ts-morph `Type` walking through unions/arrays/promises, same depth-6 cutoff) emitting `type`-role expansions for each named type/interface declared outside the change. Siblings follow `expandSiblings`' direction exactly: **changed type (or class of a changed method) → each project interface it satisfies → the *other* project types that satisfy the same interface**. TS structural typing means "implements" isn't nominal like Go: use assignability (confirm `isTypeAssignableTo` is public on the pinned TypeScript's `TypeChecker`; otherwise go through ts-morph's `compilerObject`), but also count explicit `implements` clauses. Skip project-external (lib/`node_modules`) types as gorefactor skips out-of-module ones, and skip interfaces with **no required members** — Go's `NumMethods() == 0` guard, which matters more under structural typing since an all-optional interface matches nearly everything. Same `siblingsPerInterface = 12` cap and overflow note. |
+| `src/prompt.ts` | `prompt.go` | Static TypeScript-idiom prose, structurally parallel to gorefactor's seven sections but for TS/React: promise/async error handling and unhandled rejections; `unknown` vs `any` and narrowing; nullish (`null` vs `undefined`) semantics; structural typing and when an interface is redundant beside its only implementation; React hook rules (deps arrays, stale closures, effect cleanup); test convention in this repo (co-located `*.test.tsx`, RTL patterns) — generic TS/React test idiom, not any one repo's house style; load-bearing idioms (discriminated unions + exhaustiveness checks, early return over nesting). Keep it about idiom only — no output-format rules (that's redline's harness half). |
 | `src/summary.ts` | `summary.go` | Same rendered fields, same order, for human sanity-checking without `--json`. |
 | `src/envelope.ts` | `envelope.go` | Types above + `Role` rank table + `Validate()`/`UnknownRoles()` ports, used by the CLI and by tests. |
 | `src/cli.ts` (bin `tsrefactor`) | `cmd_context_changed.go` | Arg parsing, `--budget`+`--changed` usage error, `--json` wrapping (2-space indent, `\n` line endings), non-JSON `Summary()` output. |
@@ -138,12 +144,14 @@ speculatively ahead of what exercises it:
    in `src/expand.ts`. First point where `content` is real source text.
 3. **History**: the `git log -L` port in `src/git.ts` + history-role wiring in `src/expand.ts`
    (independent of ts-morph entirely, like gorefactor's own history role).
-4. **Uses (caller/test)**: `src/expandUses.ts`. This is the phase that must be validated against the
-   actual bug (see Verification) before moving on.
+4. **Uses (caller/test)**: `src/expandUses.ts`. This is the phase that must pass the
+   bug-reproduction fixture (see Verification) before moving on.
 5. **Types + siblings**: `src/expandTypes.ts`.
 6. **Prompt + summary + determinism tests**: `src/prompt.ts`, `src/summary.ts`, and a test that runs
    `context --changed` twice against a fixed revision and asserts byte-identical stdout.
-7. **Wire into the application repository**: add to `.redline.yml`:
+7. **Wire into a consumer** (e.g. the application repository — outside this repo, optional for tsrefactor's own
+   completion): add to that repo's `.redline.yml`, with `scope` globs matching wherever *that* repo
+   keeps its TypeScript:
    ```yaml
    context:
      - name: tsrefactor
@@ -158,18 +166,25 @@ speculatively ahead of what exercises it:
 - **Unit-level**: fixture repos under `test/fixtures/` with a base commit and a follow-up commit,
   asserting exact expansion sets/roles/priorities for known changes (functions, class methods,
   interfaces, hooks) — same style as gorefactor's own `changectx_test.go`.
-- **The bug we found, as an acceptance test**: point `tsrefactor context --changed <base>` at the
-  redline worktree already materialized at
-  `a redline worktree`
-  (the application repository at the exact commit both redline runs and the real Copilot review targeted) and
-  confirm the envelope now contains a `caller`-role expansion in `DashboardPage.tsx` pointing at the
-  `useRefreshQueries(refreshQueryKeys)` call site — the exact edge graphify's tree-sitter
-  parser missed. This is the concrete, falsifiable proof the tool does what it's for.
+- **The bug we found, as a self-contained acceptance fixture** (no the application repository needed): a fixture
+  repo under `test/fixtures/` whose TypeScript sits in a non-root subdirectory (so tsconfig discovery
+  is exercised, not assumed) and reproduces the shape of the miss:
+  - `useRefreshQueries.ts` — a hook taking a list of query keys and returning a refresh
+    callback, re-exported through a barrel `index.ts`;
+  - `DashboardPage.tsx` — imports the hook via the barrel and calls
+    `useRefreshQueries(refreshQueryKeys)`, using a destructured return;
+  - `DetailExpansionPanel.tsx` — a component using its own query keys, rendered by the page.
+
+  Two follow-up commits, each a separate test: (a) change the hook's signature → the envelope must
+  contain a `caller` expansion in `DashboardPage.tsx` at the `useRefreshQueries(refreshQueryKeys)`
+  line (the edge graphify's tree-sitter parser missed); (b) change the panel's query keys → the
+  envelope must contain a `caller` expansion at the panel's JSX usage in `DashboardPage.tsx`. Note what
+  the caller role can and can't reach: the refresh call site appears only when the hook (or
+  `refreshQueryKeys`) is part of the change. The fixture must be installable-free — no
+  `node_modules` — to prove resolution relies on nothing outside the repo.
 - **Determinism**: run twice against the same revision, diff stdout, must be empty.
-- **End-to-end with redline**: after wiring `.redline.yml` (delivery step 7), run `redline run` (or
-  the project's usual invocation) against a diff touching `ui/**` and inspect the resulting
-  `session.json` envelopes array — `tsrefactor` should appear alongside `gorefactor`/`instructions`/
-  `precedent`, and files under `ui/src/components/detail/DetailExpansionPanel.tsx`
-  specifically should now carry real expansions instead of appearing only in the bare `files` list
-  with `class: "other"` and no symbols, as they did in the session.json we inspected earlier
-  (`an earlier session.json`).
+- **End-to-end with redline**: in-repo, run redline against a fixture repo whose `.redline.yml`
+  configures `tsrefactor` and confirm the resulting `session.json` envelopes array includes
+  `tsrefactor`, with the changed `.ts(x)` files carrying expansions rather than being reported as
+  uncovered. Optionally, and outside this repo's done-criteria, repeat against a real consumer such as
+  the application repository once it's wired (delivery step 7).
