@@ -24,48 +24,21 @@ const maxCalleesPerDecl = 12;
 // Only declarations inside the work tree are emitted, so a call into React or
 // a dependency is never offered as context the reviewer can go and read.
 export function expandCallees(b: Builder): void {
-  interface Group {
-    target: Decl;
-    from: string[];
-    priority: number;
-  }
-  const order: Group[] = [];
-  const byKey = new Map<string, Group>();
+  const groups: Groups = { order: [], byKey: new Map() };
   for (const d of b.decls) {
     // A changed test's callees are its own scaffolding; the test role carries
     // tests, and describe blocks are containers rather than callers.
     if (d.kind === "describe" || d.kind === "test" || isTestPath(d.rel)) {
       continue;
     }
-    let kept = 0;
-    let dropped = 0;
-    for (const target of calleeDecls(b, d)) {
-      if (target.key === d.key || isChangedDecl(b, target) || isTestPath(target.rel)) {
-        continue;
-      }
-      if (!byKey.has(target.key)) {
-        if (kept >= maxCalleesPerDecl) {
-          dropped++;
-          continue;
-        }
-        kept++;
-      }
-      let g = byKey.get(target.key);
-      if (!g) {
-        g = { target, from: [], priority: 0 };
-        byKey.set(target.key, g);
-        order.push(g);
-      }
-      g.from.push(d.scope);
-      g.priority = Math.max(g.priority, priorityFor(target));
-    }
+    const dropped = collectCallees(b, d, groups);
     if (dropped > 0) {
       b.notes.push(
         `${String(dropped)} further callee(s) of ${d.scope} were not expanded (cap ${String(maxCalleesPerDecl)} per declaration)`,
       );
     }
   }
-  for (const g of order) {
+  for (const g of groups.order) {
     b.add({
       role: "callee",
       priority: g.priority,
@@ -81,6 +54,54 @@ export function expandCallees(b: Builder): void {
       },
     });
   }
+}
+
+// Group is one emitted callee and the changed declarations that reach it.
+interface Group {
+  target: Decl;
+  from: string[];
+  priority: number;
+}
+
+// Groups keeps the emission order stable while allowing lookup by identity: an
+// envelope whose order depends on map iteration cannot be compared with itself.
+interface Groups {
+  order: Group[];
+  byKey: Map<string, Group>;
+}
+
+// collectCallees records what one changed declaration calls and returns how
+// many were dropped to the cap.
+function collectCallees(b: Builder, d: Decl, groups: Groups): number {
+  let kept = 0;
+  let dropped = 0;
+  for (const target of calleeDecls(b, d)) {
+    if (target.key === d.key || isChangedDecl(b, target) || isTestPath(target.rel)) {
+      continue;
+    }
+    if (!groups.byKey.has(target.key)) {
+      if (kept >= maxCalleesPerDecl) {
+        dropped++;
+        continue;
+      }
+      kept++;
+    }
+    record(groups, target, d.scope);
+  }
+  return dropped;
+}
+
+// record adds one reached declaration to the groups, merging with an entry
+// another changed declaration already made for it.
+function record(groups: Groups, target: Decl, from: string): void {
+  let g = groups.byKey.get(target.key);
+  if (!g) {
+    g = { target, from: [], priority: 0 };
+    groups.byKey.set(target.key, g);
+    groups.order.push(g);
+  }
+  g.from.push(from);
+  g.priority = Math.max(g.priority, priorityFor(target));
 }
 
 // isChangedDecl reports whether a declaration is one the diff touched. Identity

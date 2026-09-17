@@ -119,7 +119,9 @@ test("changing the page puts the hook it refreshes and the panel it renders in t
 
   const callees = ofRole(env, "callee");
   assert.deepEqual(
-    callees.map((e) => [e.symbol, e.file, e.details?.["calledBy"]]).sort(),
+    callees
+      .map((e) => [e.symbol, e.file, e.details?.["calledBy"]])
+      .sort((a, z) => (a[0] ?? "").localeCompare(z[0] ?? "")),
     [
       ["DetailExpansionPanel", panelPath, `${pagePath}:DashboardPage`],
       ["useRefreshQueries", hookPath, `${pagePath}:DashboardPage`],
