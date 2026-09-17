@@ -49,7 +49,7 @@ const typeLikeKinds: ReadonlySet<string> = new Set(["interface", "type", "enum",
 // Uses of unexported declarations count, as in gorefactor: most signature
 // changes are to module-private functions used within their own module.
 // Exportedness is a ranking input, which priorityFor already scores.
-export function expandUses(b: Builder): void {
+export function expandUses(b: Builder): Decl[] {
   const tests: UseSite[] = [];
   const callers: UseSite[] = [];
   for (const s of collectUses(b)) {
@@ -59,8 +59,11 @@ export function expandUses(b: Builder): void {
     }
     callers.push(s);
   }
-  addCallerSites(b, callers);
+  const direct = addCallerSites(b, callers);
   addTestSites(b, tests);
+  // The second hop is driven from expand, not here: it reads this module's
+  // walk, so calling it from inside would make the two import each other.
+  return direct;
 }
 
 // addCallerSites emits the whole calling declaration, once per declaration,
@@ -76,7 +79,7 @@ export function expandUses(b: Builder): void {
 // declaration reaching three changed symbols is one expansion naming three,
 // not three copies of one body. Keying on the line was enough while an
 // expansion was five lines wide and is not now.
-function addCallerSites(b: Builder, sites: readonly UseSite[]): void {
+function addCallerSites(b: Builder, sites: readonly UseSite[]): Decl[] {
   interface Group {
     encl: Decl;
     calls: string[];
@@ -142,6 +145,7 @@ function addCallerSites(b: Builder, sites: readonly UseSite[]): void {
       details,
     });
   }
+  return order.map((g) => g.encl);
 }
 
 // addCallerWindow is the fallback for a use no declaration encloses.
@@ -225,9 +229,20 @@ function addTestSites(b: Builder, sites: readonly UseSite[]): void {
 // service makes no promise about order, and an envelope whose order depends on
 // it cannot be compared with itself.
 function collectUses(b: Builder): UseSite[] {
+  return collectUsesOf(b, b.decls, (rel, line) => insideChanged(b, rel, line));
+}
+
+// collectUsesOf is the walk behind both hops: it finds every reference the type
+// checker resolves to one of the given declarations, skipping uses that sit
+// inside code a nearer role already carries.
+export function collectUsesOf(
+  b: Builder,
+  targets: readonly Decl[],
+  skip: (rel: string, line: number) => boolean,
+): UseSite[] {
   const seen = new Set<string>();
   const out: UseSite[] = [];
-  for (const d of b.decls) {
+  for (const d of targets) {
     if (d.kind === "describe" || d.kind === "test" || !Node.isReferenceFindable(d.nameNode)) {
       continue;
     }
@@ -249,7 +264,7 @@ function collectUses(b: Builder): UseSite[] {
         continue;
       }
       const { line, column } = sf.getLineAndColumnAtPos(r.getStart());
-      if (insideChanged(b, rel, line)) {
+      if (skip(rel, line)) {
         continue;
       }
       // Keyed on the line, not the column: a caller's content is the lines
@@ -277,7 +292,7 @@ function sortKey(u: UseSite): string {
 // insideChanged reports whether a line falls inside a declaration the diff
 // touched. These roles answer what else the change affects, and code inside
 // the change is not that: the enclosing role already ships those lines whole.
-function insideChanged(b: Builder, rel: string, line: number): boolean {
+export function insideChanged(b: Builder, rel: string, line: number): boolean {
   return b.decls.some((d) => d.rel === rel && d.start <= line && line <= d.end);
 }
 

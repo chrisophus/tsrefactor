@@ -12,6 +12,7 @@ import {
   type LineRange,
 } from "./git.ts";
 import { expandCallees } from "./expandCallees.ts";
+import { addIndirectCallerSites } from "./expandIndirect.ts";
 import { expandSiblings, expandTypes } from "./expandTypes.ts";
 import { expandUses } from "./expandUses.ts";
 import { priorityFor } from "./priority.ts";
@@ -38,7 +39,7 @@ const removedHistoryPriority = 120;
 export function expand(b: Builder): void {
   if (b.decls.length > 0) {
     expandEnclosing(b);
-    expandUses(b);
+    addIndirectCallerSites(b, expandUses(b));
     expandCallees(b);
     expandTypes(b);
     expandSiblings(b);

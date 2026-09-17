@@ -15,7 +15,7 @@ import { test, type TestContext } from "node:test";
 
 import { build } from "../src/build.ts";
 import { validate, type Envelope, type Expansion } from "../src/envelope.ts";
-import { bugFixture, hookPath, pagePath, panelPath } from "./bugFixture.ts";
+import { appPath, bugFixture, hookPath, pagePath, panelPath } from "./bugFixture.ts";
 import { fixtureRepo, writeFile } from "./helpers.ts";
 
 function run(t: TestContext, rel: string, from: string, to: string): Envelope {
@@ -133,4 +133,18 @@ test("changing the page puts the hook it refreshes and the panel it renders in t
   const panel = callees.find((e) => e.symbol === "DetailExpansionPanel");
   assert.ok(panel, "no callee for the panel");
   assert.ok(panel.content.includes('["items", "detail", itemId]'), panel.content);
+});
+
+// The second hop. App never names useRefreshQueries; it reaches it through
+// DashboardPage, and whether the hook's new argument matters can be decided
+// there -- App renders the page with no refresh of its own.
+test("changing the hook puts the page's own caller in the indirect-caller role", (t) => {
+  const env = run(t, hookPath, "keys: readonly string[][])", "keys: readonly string[][], exact = false)");
+
+  const indirect = ofRole(env, "indirect-caller");
+  assert.deepEqual(
+    indirect.map((e) => [e.symbol, e.file, e.details?.["hop"], e.details?.["reaches"]]),
+    [["App", appPath, "2", `${pagePath}:DashboardPage`]],
+  );
+  assert.ok(indirect[0]!.content.includes("<DashboardPage itemId=\"a\" />"), indirect[0]!.content);
 });

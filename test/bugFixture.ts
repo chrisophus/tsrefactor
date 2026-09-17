@@ -4,6 +4,7 @@
 export const hookPath = "app/src/hooks/useRefreshQueries.ts";
 export const panelPath = "app/src/components/detail/DetailExpansionPanel.tsx";
 export const pagePath = "app/src/pages/DashboardPage.tsx";
+export const appPath = "app/src/App.tsx";
 
 export const bugFixture: Record<string, string> = {
   "app/tsconfig.json":
@@ -48,6 +49,14 @@ export function DashboardPage({ itemId }: { itemId: string }) {
       <DetailExpansionPanel itemId={itemId} />
     </main>
   );
+}
+`,
+  [appPath]: `import { DashboardPage } from "./pages/DashboardPage";
+
+// App reaches the hook only through DashboardPage, which is the second hop the
+// indirect-caller role carries.
+export function App() {
+  return <DashboardPage itemId="a" />;
 }
 `,
   "app/src/pages/DashboardPage.test.tsx": `import { useRefreshQueries } from "../hooks";
