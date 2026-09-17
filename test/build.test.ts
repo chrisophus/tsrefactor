@@ -214,13 +214,15 @@ test("a nodenext ESM package does not report module-format errors as type errors
   );
 });
 
-test("uses of a changed symbol are callers once per line, and type uses are reference sites", (t) => {
+test("uses of a changed symbol are callers once per declaration, and type uses are reference sites", (t) => {
   const env = run(t, (dir) => {
     edit(dir, "web/src/money.ts", "export type Money = number;", "export type Money = number | bigint;");
   });
   const callers = role(env, "caller");
   // store.ts:21 names Money twice — `(cents: Money): Money` — and ships once.
-  // The import on line 3 only moves the name and is not a use.
+  // The import on line 3 only moves the name and is not a use. The two uses are
+  // in different declarations, so they stay two expansions; two uses in one
+  // would now be one, since a caller carries the declaration whole.
   assert.deepEqual(
     callers.map((e) => [e.file, e.details?.["line"], e.details?.["kind"], e.details?.["callerSymbol"]]),
     [
@@ -228,5 +230,13 @@ test("uses of a changed symbol are callers once per line, and type uses are refe
       ["web/src/store.ts", "21", "reference-site", "web/src/store.ts:total"],
     ],
   );
-  assert.ok(callers.every((e) => e.symbol === "Money" && e.scope === "web/src/money.ts:Money"));
+  // A caller is named for the declaration that does the using and says what it
+  // reaches in details.calls, the shape the test role already used.
+  assert.deepEqual(
+    callers.map((e) => [e.symbol, e.scope, e.details?.["calls"]]),
+    [
+      ["Store.insert", "web/src/store.ts:Store.insert", "web/src/money.ts:Money"],
+      ["total", "web/src/store.ts:total", "web/src/money.ts:Money"],
+    ],
+  );
 });

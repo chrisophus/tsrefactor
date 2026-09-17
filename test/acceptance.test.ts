@@ -38,17 +38,23 @@ test("changing the hook puts the page's destructured call through the barrel in 
   const callers = ofRole(env, "caller");
   const call = callers.find((e) => e.file === pagePath && e.details?.["line"] === "7");
   assert.ok(call, `no caller at ${pagePath}:7; callers = ${JSON.stringify(callers, null, 2)}`);
-  assert.equal(call.symbol, "useRefreshQueries");
-  assert.equal(call.scope, `${hookPath}:useRefreshQueries`);
+  assert.equal(call.symbol, "DashboardPage");
+  assert.equal(call.scope, `${pagePath}:DashboardPage`);
   assert.deepEqual(call.details, {
     kind: "call-site",
+    calls: `${hookPath}:useRefreshQueries`,
     line: "7",
     callerSymbol: `${pagePath}:DashboardPage`,
     callerKind: "function",
   });
   assert.ok(call.content.includes("const { refresh } = useRefreshQueries(refreshQueryKeys);"), call.content);
-  assert.equal(call.startLine, 5);
-  assert.equal(call.endLine, 9);
+  // The whole component, not a window around the call. This is the half of the
+  // bug the window could not reach: the page renders DetailExpansionPanel, whose
+  // query keys refreshQueryKeys does not cover, and the render is four lines
+  // below the call. The old span stopped at line 9, on `<main>`.
+  assert.equal(call.startLine, 6);
+  assert.equal(call.endLine, 14);
+  assert.ok(call.content.includes("<DetailExpansionPanel itemId={itemId} />"), call.content);
 
   // The barrel's re-export and the page's import move the name; they are not uses.
   assert.deepEqual(
@@ -85,9 +91,10 @@ test("changing the panel's query keys puts the page's JSX usage in the caller ro
     [
       [
         pagePath,
-        "DetailExpansionPanel",
+        "DashboardPage",
         {
           kind: "call-site",
+          calls: `${panelPath}:DetailExpansionPanel`,
           syntax: "jsx",
           line: "11",
           callerSymbol: `${pagePath}:DashboardPage`,

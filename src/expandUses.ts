@@ -51,27 +51,110 @@ const typeLikeKinds: ReadonlySet<string> = new Set(["interface", "type", "enum",
 // Exportedness is a ranking input, which priorityFor already scores.
 export function expandUses(b: Builder): void {
   const tests: UseSite[] = [];
+  const callers: UseSite[] = [];
   for (const s of collectUses(b)) {
     if (isTestPath(s.rel)) {
       tests.push(s);
       continue;
     }
-    addCallerSite(b, s);
+    callers.push(s);
   }
+  addCallerSites(b, callers);
   addTestSites(b, tests);
 }
 
-function addCallerSite(b: Builder, s: UseSite): void {
+// addCallerSites emits the whole calling declaration, once per declaration,
+// naming every changed symbol it reaches.
+//
+// What it used to send was the use line and two either side. That window
+// cannot show a nil check five lines up, what the caller does with a returned
+// value, or what a refresh handler clears before it returns, and those are the
+// relationships a contract defect turns on. The enclosing declaration carries
+// them, and it was already resolved here to fill in details.callerSymbol.
+//
+// Keyed on the declaration for the reason the test role below it is: one
+// declaration reaching three changed symbols is one expansion naming three,
+// not three copies of one body. Keying on the line was enough while an
+// expansion was five lines wide and is not now.
+function addCallerSites(b: Builder, sites: readonly UseSite[]): void {
+  interface Group {
+    encl: Decl;
+    calls: string[];
+    kinds: string[];
+    syntaxes: string[];
+    lines: string[];
+    uses: string[];
+    priority: number;
+  }
+  const order: Group[] = [];
+  const byKey = new Map<string, Group>();
+  for (const s of sites) {
+    const encl = b.enclosingAt(s.rel, s.line);
+    if (!encl) {
+      // A use with no declaration around it: a bare module-level expression.
+      // The window is all there is.
+      addCallerWindow(b, s);
+      continue;
+    }
+    let g = byKey.get(encl.key);
+    if (!g) {
+      g = { encl, calls: [], kinds: [], syntaxes: [], lines: [], uses: [], priority: 0 };
+      byKey.set(encl.key, g);
+      order.push(g);
+    }
+    g.calls.push(s.target.scope);
+    g.kinds.push(s.kind);
+    if (s.syntax !== undefined) {
+      g.syntaxes.push(s.syntax);
+    }
+    g.lines.push(String(s.line));
+    g.uses.push(`${String(s.line)}:${s.kind}`);
+    g.priority = Math.max(g.priority, priorityFor(s.target));
+  }
+  for (const g of order) {
+    const first = g.lines[0] ?? "";
+    const details: Record<string, string> = {
+      kind: sortedUnique(g.kinds).join(", "),
+      calls: sortedUnique(g.calls).join(", "),
+      line: first,
+      callerSymbol: g.encl.scope,
+      callerKind: g.encl.kind,
+    };
+    if (g.syntaxes.length > 0) {
+      details["syntax"] = sortedUnique(g.syntaxes).join(", ");
+    }
+    // Where the uses sit and what each one is, so a reader of a long
+    // declaration is not left to find them, a consumer can still preview the
+    // use in an index, and a declaration holding both a call and a bare
+    // reference does not lose which line is which to the joined kind.
+    if (g.uses.length > 1) {
+      details["uses"] = sortedUnique(g.uses).join(", ");
+    }
+    b.add({
+      role: "caller",
+      priority: g.priority,
+      symbol: g.encl.symbol,
+      scope: g.encl.scope,
+      file: g.encl.rel,
+      startLine: g.encl.start,
+      endLine: g.encl.end,
+      content: b.slice(g.encl.rel, g.encl.start, g.encl.end),
+      details,
+    });
+  }
+}
+
+// addCallerWindow is the fallback for a use no declaration encloses.
+function addCallerWindow(b: Builder, s: UseSite): void {
   const start = Math.max(s.line - callerContextLines, 1);
   const end = s.line + callerContextLines;
-  const details: Record<string, string> = { kind: s.kind, line: String(s.line) };
+  const details: Record<string, string> = {
+    kind: s.kind,
+    line: String(s.line),
+    span: "window",
+  };
   if (s.syntax !== undefined) {
     details["syntax"] = s.syntax;
-  }
-  const encl = b.enclosingAt(s.rel, s.line);
-  if (encl) {
-    details["callerSymbol"] = encl.scope;
-    details["callerKind"] = encl.kind;
   }
   b.add({
     role: "caller",
