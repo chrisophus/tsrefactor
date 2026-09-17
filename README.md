@@ -15,6 +15,12 @@ callers are found through barrel re-exports, destructured returns, aliased impor
 ## Install
 
 ```sh
+make install   # npm ci, build, and npm link — puts `tsrefactor` on PATH
+```
+
+Equivalent by hand, if you don't have `make` or want to see each step:
+
+```sh
 npm ci
 npm run build
 npm link        # puts `tsrefactor` on PATH
@@ -22,6 +28,8 @@ npm link        # puts `tsrefactor` on PATH
 
 The target repository needs no `node_modules`: tsrefactor uses the compiler ts-morph bundles, and
 imports it cannot resolve become notes rather than failures.
+
+`make help` lists the other targets (`build`, `check`, `test`, `lint`, `clean`).
 
 ## Use
 
