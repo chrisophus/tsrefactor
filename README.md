@@ -6,6 +6,9 @@ every changed file classified, and the code a reviewer needs that the diff does 
 enclosing declarations, callers, the history of changed and deleted lines, the types a changed
 signature names, sibling implementations, and the tests that reach a changed symbol.
 
+JavaScript counts as source: a TypeScript project usually has some, and the checker resolves it when
+the project allows it.
+
 Symbols are resolved with the TypeScript compiler (through ts-morph), never by matching text, so
 callers are found through barrel re-exports, destructured returns, aliased imports, and JSX.
 

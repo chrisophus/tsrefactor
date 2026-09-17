@@ -240,3 +240,28 @@ test("uses of a changed symbol are callers once per declaration, and type uses a
     ],
   );
 });
+
+// A TypeScript project usually has JavaScript in it: a config, a script, a file
+// nobody has converted. Those were classified "other" and resolved by nobody,
+// which reads to the consumer as a file no provider could speak for rather than
+// one this provider could.
+test("a changed .js file resolves its declarations", (t) => {
+  const dir = fixtureRepo(t, {
+    "tsconfig.json": JSON.stringify({ compilerOptions: { allowJs: true, checkJs: false }, include: ["lib"] }, null, 2) + "\n",
+    "lib/util.js": "export function half(n) {\n  return n / 2;\n}\n",
+    "lib/use.js": "import { half } from './util.js';\n\nexport function quarter(n) {\n  return half(half(n));\n}\n",
+  });
+  writeFile(dir, "lib/util.js", "export function half(n) {\n  return n >> 1;\n}\n");
+  const env = build({ root: dir, baseRef: "HEAD", version: "0.0.0-test" });
+
+  assert.deepEqual(env.files, [{ path: "lib/util.js", class: "source", symbols: ["half"] }]);
+  assert.deepEqual(
+    role(env, "enclosing").map((e) => e.symbol),
+    ["half"],
+  );
+  // The caller resolves across files the same way it does for TypeScript.
+  assert.deepEqual(
+    role(env, "caller").map((e) => [e.symbol, e.file, e.details?.["calls"]]),
+    [["quarter", "lib/use.js", "lib/util.js:half"]],
+  );
+});
