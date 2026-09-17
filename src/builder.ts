@@ -11,6 +11,15 @@ import { compareStrings, type Expansion, type File } from "./envelope.ts";
 import type { LineRange } from "./git.ts";
 import { declsIn, type Decl } from "./decls.ts";
 
+// defaultHistoryRevisions is how far back the history role reads per span when
+// the caller names no cap. A handful of revisions is enough to show a line was
+// deliberate, and it keeps a file rewritten fifty times from burying the rest.
+const defaultHistoryRevisions = 3;
+
+// defaultHistoryRangesPerFile is how many spans of one file get their own
+// history when the caller names no cap.
+const defaultHistoryRangesPerFile = 3;
+
 export class Builder {
   readonly repo: string;
   readonly base: string;
@@ -24,9 +33,17 @@ export class Builder {
   private readonly lines = new Map<string, string[]>();
   private readonly declCache = new Map<string, Decl[]>();
 
-  constructor(repo: string, base: string) {
+  // historyRevisions and historyRanges are the caps the history and removal
+  // roles read under, taken from the options when set. Zero or less means
+  // unset rather than none: a cap of none would silently empty a role.
+  readonly historyRevisions: number;
+  readonly historyRanges: number;
+
+  constructor(repo: string, base: string, revisions?: number, ranges?: number) {
     this.repo = repo;
     this.base = base;
+    this.historyRevisions = revisions !== undefined && revisions > 0 ? revisions : defaultHistoryRevisions;
+    this.historyRanges = ranges !== undefined && ranges > 0 ? ranges : defaultHistoryRangesPerFile;
   }
 
   abs(rel: string): string {

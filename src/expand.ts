@@ -18,14 +18,6 @@ import { expandUses } from "./expandUses.ts";
 import { priorityFor } from "./priority.ts";
 import type { Decl } from "./decls.ts";
 
-// historyRevisions caps how far back the history role reads per line span. A
-// handful of revisions is enough to show that a line was deliberate, and it
-// keeps a file rewritten fifty times from burying the rest of the envelope.
-const historyRevisions = 3;
-
-// historyRangesPerFile caps how many spans of one file get their own history.
-const historyRangesPerFile = 3;
-
 // removedHistoryPriority orders a deleted span's history within the removal
 // role. It sits above priorityFor's 50..100 band, where gorefactor set it while
 // removals shared the history role with surviving lines and had to outrank them.
@@ -66,16 +58,16 @@ function expandHistory(b: Builder): void {
       b.notes.push(`no history for ${f.path}: ${errorMessage(err)}`);
       continue;
     }
-    const [kept, dropped] = rankedSides(sides, historyRangesPerFile);
+    const [kept, dropped] = rankedSides(sides, b.historyRanges);
     if (dropped > 0) {
       b.notes.push(
-        `${dropped} further changed span(s) of ${f.path} were not traced (cap ${historyRangesPerFile} per file)`,
+        `${dropped} further changed span(s) of ${f.path} were not traced (cap ${b.historyRanges} per file)`,
       );
     }
     for (const s of kept) {
       let out: string;
       try {
-        out = logLineHistory(b.repo, b.base, f.path, s.base, historyRevisions);
+        out = logLineHistory(b.repo, b.base, f.path, s.base, b.historyRevisions);
       } catch {
         continue;
       }
@@ -94,7 +86,7 @@ function expandHistory(b: Builder): void {
           kind: "line-history",
           lines: `${s.head.start}-${s.head.end}`,
           baseLines: `${s.base.start}-${s.base.end}`,
-          revisions: String(historyRevisions),
+          revisions: String(b.historyRevisions),
         },
       };
       if (d) {
@@ -120,14 +112,14 @@ function expandRemovedHistory(b: Builder, path: string): void {
   } catch {
     return;
   }
-  const [ranges, dropped] = rankedRanges(all, historyRangesPerFile);
+  const [ranges, dropped] = rankedRanges(all, b.historyRanges);
   if (dropped > 0) {
-    b.notes.push(`${dropped} further removed span(s) of ${path} were not traced (cap ${historyRangesPerFile} per file)`);
+    b.notes.push(`${dropped} further removed span(s) of ${path} were not traced (cap ${b.historyRanges} per file)`);
   }
   for (const r of ranges) {
     let out: string;
     try {
-      out = logRemovedHistory(b.repo, b.base, path, r, historyRevisions);
+      out = logRemovedHistory(b.repo, b.base, path, r, b.historyRevisions);
     } catch {
       continue;
     }
@@ -144,7 +136,7 @@ function expandRemovedHistory(b: Builder, path: string): void {
       details: {
         kind: "removed-line-history",
         lines: `${r.start}-${r.end} at the base revision`,
-        revisions: String(historyRevisions),
+        revisions: String(b.historyRevisions),
       },
     });
   }

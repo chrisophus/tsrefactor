@@ -15,7 +15,8 @@ const exitOK = 0;
 const exitUsage = 1;
 const exitFailure = 1;
 
-const usage = "usage: tsrefactor context --changed <ref> [--in <path>] [--json]";
+const usage =
+  "usage: tsrefactor context --changed <ref> [--in <path>] [--json] [--history-revisions <n>] [--history-spans <n>]";
 
 class UsageError extends Error {}
 
@@ -23,15 +24,25 @@ interface ContextArgs {
   changed: string | undefined;
   root: string | undefined;
   budget: string | undefined;
+  historyRevisions: string | undefined;
+  historySpans: string | undefined;
   json: boolean;
   positional: string[];
 }
 
-const valueFlags = new Set(["--changed", "--in", "--budget"]);
+const valueFlags = new Set(["--changed", "--in", "--budget", "--history-revisions", "--history-spans"]);
 const boolFlags = new Set(["--json"]);
 
 function parseContextArgs(args: string[]): ContextArgs {
-  const out: ContextArgs = { changed: undefined, root: undefined, budget: undefined, json: false, positional: [] };
+  const out: ContextArgs = {
+    changed: undefined,
+    root: undefined,
+    budget: undefined,
+    historyRevisions: undefined,
+    historySpans: undefined,
+    json: false,
+    positional: [],
+  };
   for (let i = 0; i < args.length; i++) {
     const arg = args[i]!;
     if (!arg.startsWith("--")) {
@@ -58,9 +69,22 @@ function parseContextArgs(args: string[]): ContextArgs {
     } else {
       throw new UsageError(`${name} needs a value`);
     }
-    if (name === "--changed") out.changed = value;
-    else if (name === "--in") out.root = value;
-    else out.budget = value;
+    switch (name) {
+      case "--changed":
+        out.changed = value;
+        break;
+      case "--in":
+        out.root = value;
+        break;
+      case "--history-revisions":
+        out.historyRevisions = value;
+        break;
+      case "--history-spans":
+        out.historySpans = value;
+        break;
+      default:
+        out.budget = value;
+    }
   }
   return out;
 }
@@ -78,8 +102,31 @@ function contextCommand(args: string[]): string {
   if (a.budget !== undefined) {
     throw new UsageError("--budget does not apply to --changed; expansions are emitted whole for the consumer to rank");
   }
-  const env = build({ root: a.root, baseRef: a.changed, version: version() });
+  const env = build({
+    root: a.root,
+    baseRef: a.changed,
+    version: version(),
+    historyRevisions: positiveFlag("--history-revisions", a.historyRevisions),
+    historyRangesPerFile: positiveFlag("--history-spans", a.historySpans),
+  });
   return a.json ? encodeEnvelope(env) : summary(env);
+}
+
+// positiveFlag reads a count flag. Unset stays undefined, which build reads as
+// its own default; zero or negative is refused rather than silently emptying a
+// role.
+function positiveFlag(name: string, raw: string | undefined): number | undefined {
+  if (raw === undefined) {
+    return undefined;
+  }
+  const n = Number(raw);
+  if (!Number.isInteger(n)) {
+    throw new UsageError(`${name} takes a whole number (got "${raw}")`);
+  }
+  if (n < 1) {
+    throw new UsageError(`${name} must be at least 1 (got ${String(n)}); omit it for the default`);
+  }
+  return n;
 }
 
 function version(): string {
