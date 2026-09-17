@@ -109,3 +109,26 @@ test("changing the panel's query keys puts the page's JSX usage in the caller ro
     `${env.notes}`,
   );
 });
+
+// The same miss from the other end. When the page itself is what changed, the
+// question is not who calls the page but what the page reaches: the hook whose
+// keys it refreshes, and the panel whose keys it renders. Neither is visible
+// from a caller of DashboardPage, and both are callees of it.
+test("changing the page puts the hook it refreshes and the panel it renders in the callee role", (t) => {
+  const env = run(t, pagePath, "<button onClick={refresh}>Refresh</button>", "<button onClick={refresh}>Reload</button>");
+
+  const callees = ofRole(env, "callee");
+  assert.deepEqual(
+    callees.map((e) => [e.symbol, e.file, e.details?.["calledBy"]]).sort(),
+    [
+      ["DetailExpansionPanel", panelPath, `${pagePath}:DashboardPage`],
+      ["useRefreshQueries", hookPath, `${pagePath}:DashboardPage`],
+    ],
+  );
+  // The panel arrives through JSX, which is a call in every sense a reviewer
+  // cares about, and through a barrel-free direct import; the hook arrives
+  // through the barrel re-export, which is the edge a syntax parser cannot bind.
+  const panel = callees.find((e) => e.symbol === "DetailExpansionPanel");
+  assert.ok(panel, "no callee for the panel");
+  assert.ok(panel.content.includes('["items", "detail", itemId]'), panel.content);
+});

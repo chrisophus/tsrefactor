@@ -11,6 +11,7 @@ import {
   type HunkSide,
   type LineRange,
 } from "./git.ts";
+import { expandCallees } from "./expandCallees.ts";
 import { expandSiblings, expandTypes } from "./expandTypes.ts";
 import { expandUses } from "./expandUses.ts";
 import { priorityFor } from "./priority.ts";
@@ -38,6 +39,7 @@ export function expand(b: Builder): void {
   if (b.decls.length > 0) {
     expandEnclosing(b);
     expandUses(b);
+    expandCallees(b);
     expandTypes(b);
     expandSiblings(b);
   }
@@ -265,6 +267,10 @@ function emptyRoleReason(b: Builder, role: Role): string {
       return "the changed declarations had no readable content in the working tree";
     case "caller":
       return "nothing outside the change references a changed symbol";
+    case "callee":
+      return "the changed declarations call nothing this work tree declares outside the change";
+    case "indirect-caller":
+      return "nothing reaches a changed symbol through a second declaration";
     case "test":
       return "no test outside the change reaches a changed symbol";
     case "type":

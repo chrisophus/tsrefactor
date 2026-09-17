@@ -15,9 +15,18 @@ import {
 const frame = (): Envelope => ({ schemaVersion: 1, provider: { name: "tsrefactor", version: "0.1.0" } });
 
 test("roles rank in redline's order", () => {
-  assert.deepEqual([...roles], ["enclosing", "caller", "removal", "type", "sibling", "test", "history"]);
+  // This order is redline's, not this provider's: it mirrors roleRank in
+  // redline's internal/envelope. callee sits beside caller because it is the
+  // same question asked the other way; indirect-caller is last, below history,
+  // because history is cheap and a second hop is whole declarations.
+  assert.deepEqual(
+    [...roles],
+    ["enclosing", "caller", "callee", "removal", "type", "sibling", "test", "history", "indirect-caller"],
+  );
   assert.deepEqual(roleRank("enclosing"), [0, true]);
-  assert.deepEqual(roleRank("history"), [6, true]);
+  assert.deepEqual(roleRank("callee"), [2, true]);
+  assert.deepEqual(roleRank("history"), [7, true]);
+  assert.deepEqual(roleRank("indirect-caller"), [8, true]);
   assert.deepEqual(roleRank("invented"), [99, false]);
 });
 

@@ -16,7 +16,17 @@ export const providerLanguage = "typescript";
 
 // roles is the closed vocabulary, in the order the consumer ranks it. Inventing
 // a role here would rank it last on the far side.
-export const roles = ["enclosing", "caller", "removal", "type", "sibling", "test", "history"] as const;
+export const roles = [
+  "enclosing",
+  "caller",
+  "callee",
+  "removal",
+  "type",
+  "sibling",
+  "test",
+  "history",
+  "indirect-caller",
+] as const;
 
 export type Role = (typeof roles)[number];
 
