@@ -2,7 +2,7 @@ import type { Builder } from "./builder.ts";
 import { sortedUnique } from "./builder.ts";
 import { isTestPath } from "./classify.ts";
 import type { Decl } from "./decls.ts";
-import { collectUsesOf, insideChanged } from "./expandUses.ts";
+import { collectUsesOf, insideChanged, type UseSite } from "./expandUses.ts";
 import { priorityFor } from "./priority.ts";
 
 // maxIndirectCallers caps the second hop across the whole change, not per
@@ -44,10 +44,14 @@ export function addIndirectCallerSites(b: Builder, direct: readonly Decl[]): voi
   const order: Group[] = [];
   const byKey = new Map<string, Group>();
   let dropped = 0;
+  const indirectTests: UseSite[] = [];
   for (const s of sites) {
-    // A test that reaches a caller is not a hop worth paying for: the test role
-    // already carries the tests that reach the change.
+    // A test at the second hop is a test, not a caller. The test role carries
+    // the tests that name a changed symbol; one that reaches it through another
+    // declaration is the case that role never covered, and it is still the
+    // answer to "what checks this".
     if (isTestPath(s.rel)) {
+      indirectTests.push(s);
       continue;
     }
     const encl = b.enclosingAt(s.rel, s.line);
@@ -73,6 +77,7 @@ export function addIndirectCallerSites(b: Builder, direct: readonly Decl[]): voi
       `${String(dropped)} further indirect caller(s) were not expanded (cap ${String(maxIndirectCallers)})`,
     );
   }
+  addIndirectTestSites(b, indirectTests);
   for (const g of order) {
     b.add({
       role: "indirect-caller",
@@ -91,6 +96,54 @@ export function addIndirectCallerSites(b: Builder, direct: readonly Decl[]): voi
         reaches: sortedUnique(g.reaches).join(", "),
         line: g.lines[0] ?? "",
       },
+    });
+  }
+}
+
+// addIndirectTestSites emits the tests that reach the change through one of its
+// callers, under the test role.
+//
+// The test role finds tests that name a changed symbol. A test usually does not
+// when the change is a file away: it exercises the thing that calls the change,
+// which is the test most likely to fail and the one nothing here reported.
+// details.hop says the check is not a direct one, so a reviewer reading "what
+// checks this" knows how far away it sits.
+function addIndirectTestSites(b: Builder, sites: readonly UseSite[]): void {
+  interface Group {
+    encl: Decl;
+    reaches: string[];
+    priority: number;
+  }
+  const order: Group[] = [];
+  const byKey = new Map<string, Group>();
+  for (const s of sites) {
+    const encl = b.enclosingAt(s.rel, s.line);
+    if (!encl || b.decls.some((c) => c.key === encl.key)) {
+      continue;
+    }
+    let g = byKey.get(encl.key);
+    if (!g) {
+      if (order.length >= maxIndirectCallers) {
+        continue;
+      }
+      g = { encl, reaches: [], priority: 0 };
+      byKey.set(encl.key, g);
+      order.push(g);
+    }
+    g.reaches.push(s.target.scope);
+    g.priority = Math.max(g.priority, priorityFor(s.target));
+  }
+  for (const g of order) {
+    b.add({
+      role: "test",
+      priority: g.priority,
+      symbol: g.encl.symbol,
+      scope: g.encl.scope,
+      file: g.encl.rel,
+      startLine: g.encl.start,
+      endLine: g.encl.end,
+      content: b.slice(g.encl.rel, g.encl.start, g.encl.end),
+      details: { kind: "test", hop: "2", reaches: sortedUnique(g.reaches).join(", ") },
     });
   }
 }

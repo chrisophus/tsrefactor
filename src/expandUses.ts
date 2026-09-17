@@ -15,7 +15,7 @@ import { callerContextLines, priorityFor } from "./priority.ts";
 import type { Decl } from "./decls.ts";
 
 // UseSite is one place the code reads a changed symbol.
-interface UseSite {
+export interface UseSite {
   rel: string;
   line: number;
   col: number;

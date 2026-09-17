@@ -62,7 +62,10 @@ test("changing the hook puts the page's destructured call through the barrel in 
     [`${pagePath}:7`],
   );
 
-  // The test reaching the hook ships whole, once, under its describe path.
+  // Two tests, and they reach the hook by different routes. The first names it
+  // and is found by the walk over references to the change. The second never
+  // names it: it renders the page, which calls it, and is found at the second
+  // hop -- the case the role matching on named symbols reported nothing for.
   const tests = ofRole(env, "test");
   assert.deepEqual(
     tests.map((e) => [e.symbol, e.startLine, e.endLine, e.details]),
@@ -76,6 +79,12 @@ test("changing the hook puts the page's destructured call through the barrel in 
           covers: `${hookPath}:useRefreshQueries`,
           testFor: "useRefreshQueries",
         },
+      ],
+      [
+        "DashboardPage > renders the panel",
+        4,
+        6,
+        { kind: "test", hop: "2", reaches: `${pagePath}:DashboardPage` },
       ],
     ],
   );
@@ -104,9 +113,12 @@ test("changing the panel's query keys puts the page's JSX usage in the caller ro
     ],
   );
   assert.ok(callers[0]!.content.includes("<DetailExpansionPanel itemId={itemId} />"));
-  assert.ok(
-    env.notes?.includes("no test expansions: no test outside the change reaches a changed symbol"),
-    `${env.notes}`,
+  // No test names the panel, and until the second hop that read as no test at
+  // all. The page's render test is the check that would catch a key change,
+  // because the page renders the panel.
+  assert.deepEqual(
+    ofRole(env, "test").map((e) => [e.symbol, e.details?.["hop"], e.details?.["reaches"]]),
+    [["DashboardPage > renders the panel", "2", `${pagePath}:DashboardPage`]],
   );
 });
 
@@ -147,4 +159,18 @@ test("changing the hook puts the page's own caller in the indirect-caller role",
     [["App", appPath, "2", `${pagePath}:DashboardPage`]],
   );
   assert.ok(indirect[0]!.content.includes("<DashboardPage itemId=\"a\" />"), indirect[0]!.content);
+});
+
+// Item 4d: the test that checks the page never names the hook. It exercises
+// DashboardPage, which calls useRefreshQueries, so a change to the hook is
+// most likely to surface there -- and the test role, which matches tests that
+// name a changed symbol, reported nothing.
+test("changing the hook finds the test that reaches it through the page", (t) => {
+  const env = run(t, hookPath, "keys: readonly string[][])", "keys: readonly string[][], exact = false)");
+
+  const hopTests = ofRole(env, "test").filter((e) => e.details?.["hop"] === "2");
+  assert.deepEqual(
+    hopTests.map((e) => [e.symbol, e.details?.["reaches"]]),
+    [["DashboardPage > renders the panel", `${pagePath}:DashboardPage`]],
+  );
 });

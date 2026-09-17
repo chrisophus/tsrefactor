@@ -59,6 +59,17 @@ export function App() {
   return <DashboardPage itemId="a" />;
 }
 `,
+  // This one never names the hook. It renders the page, which calls the hook,
+  // so a change to the hook surfaces here and the test role matching on named
+  // symbols reported nothing.
+  "app/src/pages/DashboardPage.render.test.tsx": `import { DashboardPage } from "./DashboardPage";
+
+describe("DashboardPage", () => {
+  it("renders the panel", () => {
+    expect(DashboardPage({ itemId: "a" })).toBeTruthy();
+  });
+});
+`,
   "app/src/pages/DashboardPage.test.tsx": `import { useRefreshQueries } from "../hooks";
 
 describe("DashboardPage refresh", () => {
