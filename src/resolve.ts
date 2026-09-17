@@ -7,8 +7,10 @@ import type { File } from "./envelope.ts";
 import { hunkRanges, isDeleted, type Change, type LineRange } from "./git.ts";
 import { loadProject } from "./project.ts";
 
-// tsSourceRe matches the files this provider resolves symbols in.
-const tsSourceRe = /\.[cm]?tsx?$/;
+// tsSourceRe matches the files this provider resolves symbols in. JavaScript
+// is included: ts-morph parses it, and a file the project cannot take is
+// reported as unparsed rather than silently skipped.
+const tsSourceRe = /\.[cm]?[jt]sx?$/;
 
 // resolveChanges maps each changed hunk to the declaration that encloses it.
 // The project is loaded once, and only when a reviewable TypeScript file changed.

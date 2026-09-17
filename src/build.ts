@@ -27,6 +27,18 @@ export interface Options {
   baseRef: string;
   // version is reported as the provider version.
   version: string;
+  // historyRevisions caps how far back the history and removal roles read per
+  // span. Undefined means the default.
+  //
+  // It is an option rather than a constant because how much history is worth
+  // reading is a property of the repository, not of this program: a tree that
+  // rewrites a file weekly buries the rest of the envelope at three, and one
+  // with a long-lived guard needs more than three to reach the commit that
+  // explains it.
+  historyRevisions?: number | undefined;
+  // historyRangesPerFile caps how many spans of one file get their own history.
+  // Undefined means the default.
+  historyRangesPerFile?: number | undefined;
 }
 
 // build produces the envelope for the change between opts.baseRef's merge base
@@ -59,7 +71,7 @@ export function build(opts: Options): Envelope {
     throw new Error(`list the files changed since ${base}: ${errorMessage(err)}`, { cause: err });
   }
 
-  const b = new Builder(repo, base);
+  const b = new Builder(repo, base, opts.historyRevisions, opts.historyRangesPerFile);
   manifest(b, changes);
   resolveChanges(b, changes);
   expand(b);

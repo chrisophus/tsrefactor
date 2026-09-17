@@ -214,13 +214,15 @@ test("a nodenext ESM package does not report module-format errors as type errors
   );
 });
 
-test("uses of a changed symbol are callers once per line, and type uses are reference sites", (t) => {
+test("uses of a changed symbol are callers once per declaration, and type uses are reference sites", (t) => {
   const env = run(t, (dir) => {
     edit(dir, "web/src/money.ts", "export type Money = number;", "export type Money = number | bigint;");
   });
   const callers = role(env, "caller");
   // store.ts:21 names Money twice — `(cents: Money): Money` — and ships once.
-  // The import on line 3 only moves the name and is not a use.
+  // The import on line 3 only moves the name and is not a use. The two uses are
+  // in different declarations, so they stay two expansions; two uses in one
+  // would now be one, since a caller carries the declaration whole.
   assert.deepEqual(
     callers.map((e) => [e.file, e.details?.["line"], e.details?.["kind"], e.details?.["callerSymbol"]]),
     [
@@ -228,5 +230,121 @@ test("uses of a changed symbol are callers once per line, and type uses are refe
       ["web/src/store.ts", "21", "reference-site", "web/src/store.ts:total"],
     ],
   );
-  assert.ok(callers.every((e) => e.symbol === "Money" && e.scope === "web/src/money.ts:Money"));
+  // A caller is named for the declaration that does the using and says what it
+  // reaches in details.calls, the shape the test role already used.
+  assert.deepEqual(
+    callers.map((e) => [e.symbol, e.scope, e.details?.["calls"]]),
+    [
+      ["Store.insert", "web/src/store.ts:Store.insert", "web/src/money.ts:Money"],
+      ["total", "web/src/store.ts:total", "web/src/money.ts:Money"],
+    ],
+  );
+});
+
+// A TypeScript project usually has JavaScript in it: a config, a script, a file
+// nobody has converted. Those were classified "other" and resolved by nobody,
+// which reads to the consumer as a file no provider could speak for rather than
+// one this provider could.
+test("a changed .js file resolves its declarations", (t) => {
+  const dir = fixtureRepo(t, {
+    "tsconfig.json": JSON.stringify({ compilerOptions: { allowJs: true, checkJs: false }, include: ["lib"] }, null, 2) + "\n",
+    "lib/util.js": "export function half(n) {\n  return n / 2;\n}\n",
+    "lib/use.js": "import { half } from './util.js';\n\nexport function quarter(n) {\n  return half(half(n));\n}\n",
+  });
+  writeFile(dir, "lib/util.js", "export function half(n) {\n  return n >> 1;\n}\n");
+  const env = build({ root: dir, baseRef: "HEAD", version: "0.0.0-test" });
+
+  assert.deepEqual(env.files, [{ path: "lib/util.js", class: "source", symbols: ["half"] }]);
+  assert.deepEqual(
+    role(env, "enclosing").map((e) => e.symbol),
+    ["half"],
+  );
+  // The caller resolves across files the same way it does for TypeScript.
+  assert.deepEqual(
+    role(env, "caller").map((e) => [e.symbol, e.file, e.details?.["calls"]]),
+    [["quarter", "lib/use.js", "lib/util.js:half"]],
+  );
+});
+
+// The guard on nested declarations. Inner callbacks are declarations now, so
+// the innermost answer for a call inside a handler is the handler -- four lines
+// wide, which is the window the caller role was changed to stop sending. The
+// caller walks back out to the outermost function.
+test("a call inside a nested callback still carries the whole enclosing function", (t) => {
+  const dir = fixtureRepo(t, {
+    "tsconfig.json": JSON.stringify({ compilerOptions: { strict: true }, include: ["lib"] }, null, 2) + "\n",
+    "lib/api.ts": "export function refresh(id: string): number {\n  return id.length;\n}\n",
+    "lib/page.ts":
+      "import { refresh } from './api';\n\n" +
+      "export function Page(id: string) {\n" +
+      "  const seen = 1;\n" +
+      "  const onClick = () => {\n" +
+      "    return refresh(id);\n" +
+      "  };\n" +
+      "  return { onClick, seen };\n" +
+      "}\n",
+  });
+  writeFile(dir, "lib/api.ts", "export function refresh(id: string): number {\n  return id.length + 1;\n}\n");
+  const env = build({ root: dir, baseRef: "HEAD", version: "0.0.0-test" });
+
+  const callers = role(env, "caller");
+  assert.deepEqual(
+    callers.map((e) => [e.symbol, e.startLine, e.endLine]),
+    [["Page", 3, 9]],
+  );
+  // The whole function, so the reviewer sees what the callback returns into.
+  assert.ok(callers[0]!.content.includes("return { onClick, seen };"), callers[0]!.content);
+});
+
+// The other half: a change inside a nested callback resolves to the callback,
+// which is what makes it nameable at all.
+test("a change inside a nested callback resolves to the callback", (t) => {
+  const dir = fixtureRepo(t, {
+    "tsconfig.json": JSON.stringify({ compilerOptions: { strict: true }, include: ["lib"] }, null, 2) + "\n",
+    "lib/page.ts":
+      "export function Page(id: string) {\n" +
+      "  const onClick = () => {\n" +
+      "    return id.length;\n" +
+      "  };\n" +
+      "  return onClick;\n" +
+      "}\n",
+  });
+  writeFile(
+    dir,
+    "lib/page.ts",
+    "export function Page(id: string) {\n" +
+      "  const onClick = () => {\n" +
+      "    return id.length + 1;\n" +
+      "  };\n" +
+      "  return onClick;\n" +
+      "}\n",
+  );
+  const env = build({ root: dir, baseRef: "HEAD", version: "0.0.0-test" });
+  assert.deepEqual(
+    role(env, "enclosing").map((e) => e.symbol),
+    ["Page.onClick"],
+  );
+});
+
+// The other branch: when the resolved context does clear queries, the note says
+// where, and still refuses to claim the keys match.
+test("a changed cache key names the invalidations found near it", (t) => {
+  const dir = fixtureRepo(t, {
+    "tsconfig.json": JSON.stringify({ compilerOptions: { strict: true }, include: ["lib"] }, null, 2) + "\n",
+    "lib/panel.ts": "export function panel(id: string) {\n  const queryKey = ['items', 'detail', id];\n  return queryKey.join('/');\n}\n",
+    "lib/page.ts":
+      "import { panel } from './panel';\n\n" +
+      "const client = { invalidateQueries: (o: { queryKey: string[] }) => o.queryKey.length };\n\n" +
+      "export function page(id: string) {\n" +
+      "  client.invalidateQueries({ queryKey: ['items', 'list'] });\n" +
+      "  return panel(id);\n" +
+      "}\n",
+  });
+  writeFile(dir, "lib/panel.ts", "export function panel(id: string) {\n  const queryKey = ['items', 'detail', id, 'expanded'];\n  return queryKey.join('/');\n}\n");
+  const env = build({ root: dir, baseRef: "HEAD", version: "0.0.0-test" });
+
+  const note = env.notes?.find((n) => n.includes("cache key(s)"));
+  assert.ok(note, `${env.notes}`);
+  assert.ok(note.includes("lib/page.ts:6 invalidateQueries"), note);
+  assert.ok(note.includes("Whether those keys still cover the changed one was not determined"), note);
 });

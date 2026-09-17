@@ -69,7 +69,12 @@ const migrationDirs = new Set(["migrations", "migration", "migrate"]);
 const migrationNameRe = /^\d{3,}[_-].+\.(?:sql|go|ts|js)$/;
 
 const testNameRe = /\.(?:test|spec)\.[cm]?[jt]sx?$/;
-const sourceNameRe = /\.[cm]?tsx?$/;
+// JavaScript counts. A TypeScript project usually has .js in it -- a config, a
+// script, a file not converted yet -- and the checker resolves those when the
+// project allows them. Treating them as "other" left them to no provider at
+// all, which reads as a file nobody could speak for rather than one this
+// provider could.
+const sourceNameRe = /\.[cm]?[jt]sx?$/;
 
 // classify decides the manifest entry for one changed path. The order of the
 // tests is the precedence: the first answer that applies wins, so a generated

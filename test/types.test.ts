@@ -111,11 +111,19 @@ const ofRole = (env: Envelope, role: string): Expansion[] => (env.expansions ?? 
 test("a changed method's signature brings its project types, not library ones, and its class's siblings", (t) => {
   const env = run(t, [["src/store.ts", "    this.count++;", "    this.count += 1;"]]);
 
+  // Record is named in the changed signature. Writer is what the sibling below
+  // is a peer under: the sibling role has always named it in details.interface
+  // and never sent the declaration, so a reviewer saw that Store and MemStore
+  // are peers but not the contract they both keep.
   assert.deepEqual(
     ofRole(env, "type").map((e) => [e.symbol, e.file, e.priority, e.details]),
-    [["Record", "src/types.ts", 81, { kind: "type", referencedBy: "src/store.ts:Store.insert" }]],
+    [
+      ["Record", "src/types.ts", 81, { kind: "type", referencedBy: "src/store.ts:Store.insert", via: "signature" }],
+      ["Writer", "src/types.ts", 80, { kind: "interface", whyShown: "the interface the changed type satisfies" }],
+    ],
   );
   assert.equal(ofRole(env, "type")[0]!.content, "export interface Record {\n  id: string;\n}\n");
+  assert.equal(ofRole(env, "type")[1]!.content, "export interface Writer {\n  insert(r: Record): Promise<void>;\n}\n");
 
   // MemStore has no implements clause; it is a sibling because it is assignable.
   assert.deepEqual(
@@ -135,11 +143,13 @@ test("a changed method's signature brings its project types, not library ones, a
 test("aliases the checker erases are still found, and a generic interface's siblings come from its clause", (t) => {
   const env = run(t, [["src/repos.ts", "    return undefined;", "    return void 0;"]]);
 
+  // Repo is the generic interface the sibling below is a peer under, sent now
+  // rather than only named in details.interface.
   assert.deepEqual(
     ofRole(env, "type")
       .map((e) => e.symbol ?? "")
       .sort(compareStrings),
-    ["Maybe", "Record", "RecordId"],
+    ["Maybe", "Record", "RecordId", "Repo"],
   );
   assert.deepEqual(
     ofRole(env, "sibling").map((e) => [e.symbol, e.details]),
@@ -168,10 +178,12 @@ test("a type the change also edits is not emitted again", (t) => {
     ["src/types.ts", "  id: string;\n}", "  id: string;\n  name?: string;\n}"],
     ["src/store.ts", "    this.count++;", "    this.count += 1;"],
   ]);
-  assert.equal(ofRole(env, "type").length, 0);
-  assert.ok(
-    env.notes?.includes("no type expansions: the changed signatures name no type declared outside the change"),
-    `${env.notes}`,
+  // Record is edited by this change, so it is not emitted again: the enclosing
+  // role carries it. Writer is not edited and is still sent, because it is the
+  // interface the changed class is a peer under.
+  assert.deepEqual(
+    ofRole(env, "type").map((e) => [e.symbol, e.details?.["kind"]]),
+    [["Writer", "interface"]],
   );
 });
 
@@ -196,4 +208,42 @@ test("siblings are capped per interface, and the cap says what it dropped", (t) 
     env.notes?.includes("1 further implementation(s) of src/handlers.ts:Handler were not expanded (cap 12 per interface)"),
     `${env.notes}`,
   );
+});
+
+// Item 4b: when the interface itself is what changed, the implementations owed
+// the same change are the answer, and they arrive through the same satisfies
+// check that finds peers of a changed class.
+test("changing an interface brings the classes that implement it", (t) => {
+  const env = run(t, [["src/types.ts", "  insert(r: Record): Promise<void>;", "  insert(r: Record, force?: boolean): Promise<void>;"]]);
+  assert.deepEqual(
+    ofRole(env, "sibling")
+      .map((e) => e.symbol ?? "")
+      .sort(compareStrings),
+    ["MemStore", "Store"],
+  );
+});
+
+// The harder half: an interface that gains a member is exactly when its
+// implementations stop satisfying it, and exactly when the reviewer needs them.
+// Matching on assignability alone finds the classes that are still fine and
+// hides every one the change broke.
+test("an interface that gains a member still brings the classes it broke", (t) => {
+  const env = run(t, [["src/types.ts", "  insert(r: Record): Promise<void>;", "  insert(r: Record): Promise<void>;\n  flush(): Promise<void>;"]]);
+  assert.deepEqual(
+    ofRole(env, "sibling")
+      .map((e) => e.symbol ?? "")
+      .sort(compareStrings),
+    ["MemStore", "Store"],
+  );
+});
+
+// Item 4c: a changed declaration brings what it refers to. The stage only read
+// signatures, so editing an interface reached none of its members' types.
+test("a changed interface brings the types of its members", (t) => {
+  const env = run(t, [["src/types.ts", "export interface Repo<T> {\n  get(id: RecordId): Maybe<T>;\n}", "export interface Repo<T> {\n  get(id: RecordId): Maybe<T>;\n  last(): Record;\n}"]]);
+  const declared = ofRole(env, "type")
+    .filter((e) => e.details?.["via"] === "declared")
+    .map((e) => e.symbol ?? "")
+    .sort(compareStrings);
+  assert.deepEqual(declared, ["Maybe", "Record", "RecordId"]);
 });

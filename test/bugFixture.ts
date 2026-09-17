@@ -4,6 +4,7 @@
 export const hookPath = "app/src/hooks/useRefreshQueries.ts";
 export const panelPath = "app/src/components/detail/DetailExpansionPanel.tsx";
 export const pagePath = "app/src/pages/DashboardPage.tsx";
+export const appPath = "app/src/App.tsx";
 
 export const bugFixture: Record<string, string> = {
   "app/tsconfig.json":
@@ -49,6 +50,25 @@ export function DashboardPage({ itemId }: { itemId: string }) {
     </main>
   );
 }
+`,
+  [appPath]: `import { DashboardPage } from "./pages/DashboardPage";
+
+// App reaches the hook only through DashboardPage, which is the second hop the
+// indirect-caller role carries.
+export function App() {
+  return <DashboardPage itemId="a" />;
+}
+`,
+  // This one never names the hook. It renders the page, which calls the hook,
+  // so a change to the hook surfaces here and the test role matching on named
+  // symbols reported nothing.
+  "app/src/pages/DashboardPage.render.test.tsx": `import { DashboardPage } from "./DashboardPage";
+
+describe("DashboardPage", () => {
+  it("renders the panel", () => {
+    expect(DashboardPage({ itemId: "a" })).toBeTruthy();
+  });
+});
 `,
   "app/src/pages/DashboardPage.test.tsx": `import { useRefreshQueries } from "../hooks";
 

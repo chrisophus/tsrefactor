@@ -9,7 +9,16 @@ import type { Project, SourceFile } from "ts-morph";
 
 import { compareStrings, type Expansion, type File } from "./envelope.ts";
 import type { LineRange } from "./git.ts";
-import { declsIn, type Decl } from "./decls.ts";
+import { declsIn, functionKinds, type Decl } from "./decls.ts";
+
+// defaultHistoryRevisions is how far back the history role reads per span when
+// the caller names no cap. A handful of revisions is enough to show a line was
+// deliberate, and it keeps a file rewritten fifty times from burying the rest.
+const defaultHistoryRevisions = 3;
+
+// defaultHistoryRangesPerFile is how many spans of one file get their own
+// history when the caller names no cap.
+const defaultHistoryRangesPerFile = 3;
 
 export class Builder {
   readonly repo: string;
@@ -24,9 +33,17 @@ export class Builder {
   private readonly lines = new Map<string, string[]>();
   private readonly declCache = new Map<string, Decl[]>();
 
-  constructor(repo: string, base: string) {
+  // historyRevisions and historyRanges are the caps the history and removal
+  // roles read under, taken from the options when set. Zero or less means
+  // unset rather than none: a cap of none would silently empty a role.
+  readonly historyRevisions: number;
+  readonly historyRanges: number;
+
+  constructor(repo: string, base: string, revisions?: number, ranges?: number) {
     this.repo = repo;
     this.base = base;
+    this.historyRevisions = revisions !== undefined && revisions > 0 ? revisions : defaultHistoryRevisions;
+    this.historyRanges = ranges !== undefined && ranges > 0 ? ranges : defaultHistoryRangesPerFile;
   }
 
   abs(rel: string): string {
@@ -69,6 +86,31 @@ export class Builder {
     const ds = sf ? declsIn(sf, rel) : [];
     this.declCache.set(rel, ds);
     return ds;
+  }
+
+  // enclosingFunctionAt returns the outermost function containing a line: the
+  // component rather than the callback inside it.
+  //
+  // A call site is worth reading with the whole function around it, and since
+  // nested functions became declarations the innermost answer is often a
+  // handler four lines wide -- which is the window this role was changed to
+  // stop sending. It stops at anything that is not a function, so a method
+  // stays a method rather than widening to its class.
+  enclosingFunctionAt(rel: string, line: number): Decl | undefined {
+    const start = this.enclosingAt(rel, line);
+    if (!start) {
+      return undefined;
+    }
+    const byKey = new Map<string, Decl>(this.declsForRel(rel).map((x) => [x.key, x]));
+    let d: Decl = start;
+    for (;;) {
+      const parentKey = d.parentKey;
+      const parent = parentKey === undefined ? undefined : byKey.get(parentKey);
+      if (!parent || !functionKinds.has(parent.kind)) {
+        return d;
+      }
+      d = parent;
+    }
   }
 
   // enclosingAt returns the innermost declaration containing a line of a file:

@@ -32,7 +32,13 @@ test("classify sorts paths into classes", (t) => {
     ["api/user.pb.go", "generated", true],
     ["internal/oas_client.go", "generated", true],
     ["README.md", "other", false],
-    ["src/index.js", "other", false],
+    // JavaScript is source: a TypeScript project usually has some, and the
+    // checker resolves it when the project allows it. Classifying it as other
+    // left it to no provider at all.
+    ["src/index.js", "source", false],
+    ["src/legacy.jsx", "source", false],
+    ["scripts/build.mjs", "source", false],
+    ["src/app.spec.js", "test", false],
   ];
   for (const [path, want, generated] of cases) {
     assert.deepEqual(classify(repo, { path, status: "M" }), [want, generated], path);
