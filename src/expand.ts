@@ -16,6 +16,7 @@ import { addIndirectCallerSites } from "./expandIndirect.ts";
 import { expandSiblings, expandTypes } from "./expandTypes.ts";
 import { expandUses } from "./expandUses.ts";
 import { priorityFor } from "./priority.ts";
+import { noteQueryKeys } from "./queryKeys.ts";
 import type { Decl } from "./decls.ts";
 
 // removedHistoryPriority orders a deleted span's history within the removal
@@ -37,6 +38,7 @@ export function expand(b: Builder): void {
     expandSiblings(b);
   }
   expandHistory(b);
+  noteQueryKeys(b);
   noteEmptyRoles(b);
   sortExpansions(b.exps);
 }

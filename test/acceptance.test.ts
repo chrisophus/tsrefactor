@@ -174,3 +174,18 @@ test("changing the hook finds the test that reaches it through the page", (t) =>
     [["DashboardPage > renders the panel", `${pagePath}:DashboardPage`]],
   );
 });
+
+// The question the original miss turned on, reported where the provider's
+// guesses go. Keys are matched by reading names, not resolved, so this is an
+// unknown rather than context the envelope stands behind.
+test("changing the panel's keys reports that nothing was found to clear them", (t) => {
+  const env = run(t, panelPath, '["items", "detail", itemId]', '["items", "detail", itemId, "expanded"]');
+  assert.ok(
+    env.notes?.some(
+      (n) =>
+        n.includes('cache key(s) queryKey ["items", "detail", itemId, "expanded"]') &&
+        n.includes("nothing in the resolved context clears them"),
+    ),
+    `${env.notes}`,
+  );
+});

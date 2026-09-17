@@ -43,6 +43,15 @@ tsrefactor context --changed <ref> [--in <path>] [--json]
 - `--history-spans <n>`: how many spans of one file get their own history
   (default 3).
 
+One thing is found by reading names rather than by resolving symbols, and it is
+deliberately not an expansion. When a change edits a cache key -- a `queryKey`
+property, or a variable named for one -- the envelope carries a **note** naming
+the `invalidateQueries` and friends found in the resolved context, and says
+plainly that whether those keys still cover the changed one was not determined.
+Matching two array literals is a guess, so it goes where this provider's
+guesses go: the unknowns, which redline reports as what could not be
+determined. Every role stays resolved-only.
+
 Output is byte-identical for the same revision. `--budget` is refused: expansions are emitted whole
 for redline to rank and cut.
 

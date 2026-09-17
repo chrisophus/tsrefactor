@@ -325,3 +325,26 @@ test("a change inside a nested callback resolves to the callback", (t) => {
     ["Page.onClick"],
   );
 });
+
+// The other branch: when the resolved context does clear queries, the note says
+// where, and still refuses to claim the keys match.
+test("a changed cache key names the invalidations found near it", (t) => {
+  const dir = fixtureRepo(t, {
+    "tsconfig.json": JSON.stringify({ compilerOptions: { strict: true }, include: ["lib"] }, null, 2) + "\n",
+    "lib/panel.ts": "export function panel(id: string) {\n  const queryKey = ['items', 'detail', id];\n  return queryKey.join('/');\n}\n",
+    "lib/page.ts":
+      "import { panel } from './panel';\n\n" +
+      "const client = { invalidateQueries: (o: { queryKey: string[] }) => o.queryKey.length };\n\n" +
+      "export function page(id: string) {\n" +
+      "  client.invalidateQueries({ queryKey: ['items', 'list'] });\n" +
+      "  return panel(id);\n" +
+      "}\n",
+  });
+  writeFile(dir, "lib/panel.ts", "export function panel(id: string) {\n  const queryKey = ['items', 'detail', id, 'expanded'];\n  return queryKey.join('/');\n}\n");
+  const env = build({ root: dir, baseRef: "HEAD", version: "0.0.0-test" });
+
+  const note = env.notes?.find((n) => n.includes("cache key(s)"));
+  assert.ok(note, `${env.notes}`);
+  assert.ok(note.includes("lib/page.ts:6 invalidateQueries"), note);
+  assert.ok(note.includes("Whether those keys still cover the changed one was not determined"), note);
+});
