@@ -209,3 +209,30 @@ test("siblings are capped per interface, and the cap says what it dropped", (t) 
     `${env.notes}`,
   );
 });
+
+// Item 4b: when the interface itself is what changed, the implementations owed
+// the same change are the answer, and they arrive through the same satisfies
+// check that finds peers of a changed class.
+test("changing an interface brings the classes that implement it", (t) => {
+  const env = run(t, [["src/types.ts", "  insert(r: Record): Promise<void>;", "  insert(r: Record, force?: boolean): Promise<void>;"]]);
+  assert.deepEqual(
+    ofRole(env, "sibling")
+      .map((e) => e.symbol ?? "")
+      .sort(compareStrings),
+    ["MemStore", "Store"],
+  );
+});
+
+// The harder half: an interface that gains a member is exactly when its
+// implementations stop satisfying it, and exactly when the reviewer needs them.
+// Matching on assignability alone finds the classes that are still fine and
+// hides every one the change broke.
+test("an interface that gains a member still brings the classes it broke", (t) => {
+  const env = run(t, [["src/types.ts", "  insert(r: Record): Promise<void>;", "  insert(r: Record): Promise<void>;\n  flush(): Promise<void>;"]]);
+  assert.deepEqual(
+    ofRole(env, "sibling")
+      .map((e) => e.symbol ?? "")
+      .sort(compareStrings),
+    ["MemStore", "Store"],
+  );
+});

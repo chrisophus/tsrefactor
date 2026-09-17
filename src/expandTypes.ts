@@ -183,12 +183,17 @@ export function expandSiblings(b: Builder): void {
     return;
   }
   const changed = changedClasses(b);
-  if (changed.length === 0) {
-    return;
-  }
   const { ifaces, classes } = projectTypes(b);
   const emitted = new Set<string>();
   const ifaceSeen = new Set<string>();
+  // When the interface itself is what changed, the classes implementing it are
+  // the answer: they are the ones owed the same change. Nothing reached this
+  // before, because the walk started from changed classes and an interface is
+  // not one.
+  addImplementations(b, classes, emitted);
+  if (changed.length === 0) {
+    return;
+  }
   for (const ct of changed) {
     for (const iface of ifaces) {
       if (!hasRequiredMembers(iface) || !satisfies(b, ct, iface)) {
@@ -197,6 +202,89 @@ export function expandSiblings(b: Builder): void {
       if (addSiblings(b, ct, iface, classes, emitted) > 0) {
         addInterface(b, iface, ifaceSeen);
       }
+    }
+  }
+}
+
+// implementsContract reports whether a class is an implementation of an
+// interface for the purpose of a changed contract, which is not the question
+// satisfies asks.
+//
+// An interface that gains a member is exactly the case where its
+// implementations stop being assignable to it, and that is the moment a
+// reviewer most needs to see them: matching on assignability alone finds the
+// classes that are still fine and hides every one the change broke. So a class
+// counts when it is assignable, or when it declares a member the interface
+// requires -- which is what an implementation halfway through a contract change
+// looks like.
+function implementsContract(b: Builder, cls: Decl, iface: Decl): boolean {
+  if (satisfies(b, cls, iface)) {
+    return true;
+  }
+  if (!Node.isClassDeclaration(cls.node) || !Node.isInterfaceDeclaration(iface.node)) {
+    return false;
+  }
+  const members = new Set(cls.node.getMembers().map((m) => memberName(m)).filter((n) => n !== undefined));
+  return iface.node.getMembers().some((m) => {
+    const n = memberName(m);
+    return n !== undefined && members.has(n);
+  });
+}
+
+// memberName is the declared name of a class or interface member, when it has
+// one an implementation could match: an index signature or a call signature
+// does not.
+function memberName(m: Node): string | undefined {
+  if (Node.isPropertyDeclaration(m) || Node.isMethodDeclaration(m) || Node.isGetAccessorDeclaration(m)) {
+    return m.getName();
+  }
+  if (Node.isPropertySignature(m) || Node.isMethodSignature(m)) {
+    return m.getName();
+  }
+  return undefined;
+}
+
+// addImplementations emits the classes that implement an interface the change
+// edits. A changed interface is a changed contract, and the reviewer's question
+// is which implementations still keep it -- the same question the sibling role
+// answers from the other direction.
+function addImplementations(b: Builder, classes: readonly Decl[], emitted: Set<string>): void {
+  for (const iface of b.decls) {
+    if (!Node.isInterfaceDeclaration(iface.node) || !hasRequiredMembers(iface)) {
+      continue;
+    }
+    let kept = 0;
+    let skipped = 0;
+    for (const cls of classes) {
+      if (b.decls.some((c) => c.key === cls.key) || !implementsContract(b, cls, iface)) {
+        continue;
+      }
+      const key = `${iface.scope}|${cls.scope}`;
+      if (emitted.has(key)) {
+        continue;
+      }
+      if (kept >= siblingsPerInterface) {
+        skipped++;
+        continue;
+      }
+      emitted.add(key);
+      kept++;
+      b.add({
+        role: "sibling",
+        priority: priorityFor(cls),
+        symbol: cls.symbol,
+        scope: cls.scope,
+        file: cls.rel,
+        startLine: cls.start,
+        endLine: cls.end,
+        content: b.slice(cls.rel, cls.start, cls.end),
+        details: { kind: "implementation", interface: iface.scope, implementsChanged: "true" },
+      });
+    }
+    if (skipped > 0) {
+      b.notes.push(
+        `${skipped} further implementation(s) of ${iface.scope} were not expanded (cap ${siblingsPerInterface} per interface)`,
+      );
     }
   }
 }
