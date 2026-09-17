@@ -188,17 +188,50 @@ export function expandSiblings(b: Builder): void {
   }
   const { ifaces, classes } = projectTypes(b);
   const emitted = new Set<string>();
+  const ifaceSeen = new Set<string>();
   for (const ct of changed) {
     for (const iface of ifaces) {
       if (!hasRequiredMembers(iface) || !satisfies(b, ct, iface)) {
         continue;
       }
-      addSiblings(b, ct, iface, classes, emitted);
+      if (addSiblings(b, ct, iface, classes, emitted) > 0) {
+        addInterface(b, iface, ifaceSeen);
+      }
     }
   }
 }
 
-function addSiblings(b: Builder, ct: Decl, iface: Decl, classes: readonly Decl[], emitted: Set<string>): void {
+// addInterface emits the interface a changed class satisfies, once, and only
+// when a sibling was emitted under it.
+//
+// The sibling role names it in details.interface and has never sent it. With no
+// sibling there is no details.interface either, so there is nothing to complete
+// and the interface is one more type the reviewer did not ask for. A
+// reviewer holding two implementations and no interface has been shown that the
+// two are peers and not what they are peers under, which is the only place the
+// contract they both have to keep is written down.
+function addInterface(b: Builder, iface: Decl, seen: Set<string>): void {
+  if (seen.has(iface.key)) {
+    return;
+  }
+  seen.add(iface.key);
+  if (b.decls.some((c) => c.key === iface.key)) {
+    return; // the enclosing role already carries it
+  }
+  b.add({
+    role: "type",
+    priority: priorityFor(iface),
+    symbol: iface.symbol,
+    scope: iface.scope,
+    file: iface.rel,
+    startLine: iface.start,
+    endLine: iface.end,
+    content: b.slice(iface.rel, iface.start, iface.end),
+    details: { kind: "interface", whyShown: "the interface the changed type satisfies" },
+  });
+}
+
+function addSiblings(b: Builder, ct: Decl, iface: Decl, classes: readonly Decl[], emitted: Set<string>): number {
   let kept = 0;
   let skipped = 0;
   for (const other of classes) {
@@ -232,6 +265,7 @@ function addSiblings(b: Builder, ct: Decl, iface: Decl, classes: readonly Decl[]
       `${skipped} further implementation(s) of ${iface.scope} were not expanded (cap ${siblingsPerInterface} per interface)`,
     );
   }
+  return kept;
 }
 
 // changedClasses returns the classes the change touches: changed classes, and

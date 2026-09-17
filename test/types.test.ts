@@ -111,11 +111,19 @@ const ofRole = (env: Envelope, role: string): Expansion[] => (env.expansions ?? 
 test("a changed method's signature brings its project types, not library ones, and its class's siblings", (t) => {
   const env = run(t, [["src/store.ts", "    this.count++;", "    this.count += 1;"]]);
 
+  // Record is named in the changed signature. Writer is what the sibling below
+  // is a peer under: the sibling role has always named it in details.interface
+  // and never sent the declaration, so a reviewer saw that Store and MemStore
+  // are peers but not the contract they both keep.
   assert.deepEqual(
     ofRole(env, "type").map((e) => [e.symbol, e.file, e.priority, e.details]),
-    [["Record", "src/types.ts", 81, { kind: "type", referencedBy: "src/store.ts:Store.insert" }]],
+    [
+      ["Record", "src/types.ts", 81, { kind: "type", referencedBy: "src/store.ts:Store.insert" }],
+      ["Writer", "src/types.ts", 80, { kind: "interface", whyShown: "the interface the changed type satisfies" }],
+    ],
   );
   assert.equal(ofRole(env, "type")[0]!.content, "export interface Record {\n  id: string;\n}\n");
+  assert.equal(ofRole(env, "type")[1]!.content, "export interface Writer {\n  insert(r: Record): Promise<void>;\n}\n");
 
   // MemStore has no implements clause; it is a sibling because it is assignable.
   assert.deepEqual(
@@ -135,11 +143,13 @@ test("a changed method's signature brings its project types, not library ones, a
 test("aliases the checker erases are still found, and a generic interface's siblings come from its clause", (t) => {
   const env = run(t, [["src/repos.ts", "    return undefined;", "    return void 0;"]]);
 
+  // Repo is the generic interface the sibling below is a peer under, sent now
+  // rather than only named in details.interface.
   assert.deepEqual(
     ofRole(env, "type")
       .map((e) => e.symbol ?? "")
       .sort(compareStrings),
-    ["Maybe", "Record", "RecordId"],
+    ["Maybe", "Record", "RecordId", "Repo"],
   );
   assert.deepEqual(
     ofRole(env, "sibling").map((e) => [e.symbol, e.details]),
@@ -168,10 +178,12 @@ test("a type the change also edits is not emitted again", (t) => {
     ["src/types.ts", "  id: string;\n}", "  id: string;\n  name?: string;\n}"],
     ["src/store.ts", "    this.count++;", "    this.count += 1;"],
   ]);
-  assert.equal(ofRole(env, "type").length, 0);
-  assert.ok(
-    env.notes?.includes("no type expansions: the changed signatures name no type declared outside the change"),
-    `${env.notes}`,
+  // Record is edited by this change, so it is not emitted again: the enclosing
+  // role carries it. Writer is not edited and is still sent, because it is the
+  // interface the changed class is a peer under.
+  assert.deepEqual(
+    ofRole(env, "type").map((e) => [e.symbol, e.details?.["kind"]]),
+    [["Writer", "interface"]],
   );
 });
 
