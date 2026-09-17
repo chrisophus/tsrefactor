@@ -9,7 +9,7 @@ import type { Project, SourceFile } from "ts-morph";
 
 import { compareStrings, type Expansion, type File } from "./envelope.ts";
 import type { LineRange } from "./git.ts";
-import { declsIn, type Decl } from "./decls.ts";
+import { declsIn, functionKinds, type Decl } from "./decls.ts";
 
 // defaultHistoryRevisions is how far back the history role reads per span when
 // the caller names no cap. A handful of revisions is enough to show a line was
@@ -86,6 +86,31 @@ export class Builder {
     const ds = sf ? declsIn(sf, rel) : [];
     this.declCache.set(rel, ds);
     return ds;
+  }
+
+  // enclosingFunctionAt returns the outermost function containing a line: the
+  // component rather than the callback inside it.
+  //
+  // A call site is worth reading with the whole function around it, and since
+  // nested functions became declarations the innermost answer is often a
+  // handler four lines wide -- which is the window this role was changed to
+  // stop sending. It stops at anything that is not a function, so a method
+  // stays a method rather than widening to its class.
+  enclosingFunctionAt(rel: string, line: number): Decl | undefined {
+    const start = this.enclosingAt(rel, line);
+    if (!start) {
+      return undefined;
+    }
+    const byKey = new Map<string, Decl>(this.declsForRel(rel).map((x) => [x.key, x]));
+    let d: Decl = start;
+    for (;;) {
+      const parentKey = d.parentKey;
+      const parent = parentKey === undefined ? undefined : byKey.get(parentKey);
+      if (!parent || !functionKinds.has(parent.kind)) {
+        return d;
+      }
+      d = parent;
+    }
   }
 
   // enclosingAt returns the innermost declaration containing a line of a file:

@@ -265,3 +265,63 @@ test("a changed .js file resolves its declarations", (t) => {
     [["quarter", "lib/use.js", "lib/util.js:half"]],
   );
 });
+
+// The guard on nested declarations. Inner callbacks are declarations now, so
+// the innermost answer for a call inside a handler is the handler -- four lines
+// wide, which is the window the caller role was changed to stop sending. The
+// caller walks back out to the outermost function.
+test("a call inside a nested callback still carries the whole enclosing function", (t) => {
+  const dir = fixtureRepo(t, {
+    "tsconfig.json": JSON.stringify({ compilerOptions: { strict: true }, include: ["lib"] }, null, 2) + "\n",
+    "lib/api.ts": "export function refresh(id: string): number {\n  return id.length;\n}\n",
+    "lib/page.ts":
+      "import { refresh } from './api';\n\n" +
+      "export function Page(id: string) {\n" +
+      "  const seen = 1;\n" +
+      "  const onClick = () => {\n" +
+      "    return refresh(id);\n" +
+      "  };\n" +
+      "  return { onClick, seen };\n" +
+      "}\n",
+  });
+  writeFile(dir, "lib/api.ts", "export function refresh(id: string): number {\n  return id.length + 1;\n}\n");
+  const env = build({ root: dir, baseRef: "HEAD", version: "0.0.0-test" });
+
+  const callers = role(env, "caller");
+  assert.deepEqual(
+    callers.map((e) => [e.symbol, e.startLine, e.endLine]),
+    [["Page", 3, 9]],
+  );
+  // The whole function, so the reviewer sees what the callback returns into.
+  assert.ok(callers[0]!.content.includes("return { onClick, seen };"), callers[0]!.content);
+});
+
+// The other half: a change inside a nested callback resolves to the callback,
+// which is what makes it nameable at all.
+test("a change inside a nested callback resolves to the callback", (t) => {
+  const dir = fixtureRepo(t, {
+    "tsconfig.json": JSON.stringify({ compilerOptions: { strict: true }, include: ["lib"] }, null, 2) + "\n",
+    "lib/page.ts":
+      "export function Page(id: string) {\n" +
+      "  const onClick = () => {\n" +
+      "    return id.length;\n" +
+      "  };\n" +
+      "  return onClick;\n" +
+      "}\n",
+  });
+  writeFile(
+    dir,
+    "lib/page.ts",
+    "export function Page(id: string) {\n" +
+      "  const onClick = () => {\n" +
+      "    return id.length + 1;\n" +
+      "  };\n" +
+      "  return onClick;\n" +
+      "}\n",
+  );
+  const env = build({ root: dir, baseRef: "HEAD", version: "0.0.0-test" });
+  assert.deepEqual(
+    role(env, "enclosing").map((e) => e.symbol),
+    ["Page.onClick"],
+  );
+});

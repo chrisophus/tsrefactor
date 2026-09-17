@@ -92,6 +92,64 @@ export function declsIn(sf: SourceFile, rel: string): Decl[] {
       out.push(...testBlocks(stmt, [], [], make));
     }
   }
+  // Collected into their own array rather than appended while iterating: a
+  // nested function is itself function-kind, so walking a growing list would
+  // descend into what this pass just added.
+  const nested: Decl[] = [];
+  for (const d of out) {
+    nested.push(...nestedFunctionDecls(d, make));
+  }
+  return [...out, ...nested];
+}
+
+// functionKinds are the declarations that hold a body worth walking into, and
+// the ones a caller expansion walks back out to.
+export const functionKinds: ReadonlySet<string> = new Set([
+  "function",
+  "method",
+  "constructor",
+  "getter",
+  "setter",
+]);
+
+// nestedFunctionDecls yields the functions declared inside another function:
+// the hooks, handlers and callbacks a component is mostly made of, which were
+// never declarations and so could never be named, changed, or reached.
+//
+// They are recorded as members of the declaration holding them, which is what
+// keeps a change inside a callback from also selecting the whole component:
+// selectedBy skips a container whose every touched line sits in a member. The
+// caller role walks back out to the outermost function, because a call site is
+// worth reading with the component around it.
+function nestedFunctionDecls(parent: Decl, make: MakeDecl): Decl[] {
+  if (!functionKinds.has(parent.kind)) {
+    return [];
+  }
+  const out: Decl[] = [];
+  parent.node.forEachDescendant((n) => {
+    let nameNode: Node | undefined;
+    let span: Node = n;
+    if (Node.isFunctionDeclaration(n)) {
+      nameNode = n.getNameNode();
+    } else if (Node.isVariableDeclaration(n) && isFunctionValue(n.getInitializer())) {
+      const name = n.getNameNode();
+      if (Node.isIdentifier(name)) {
+        nameNode = name;
+        span = n;
+      }
+    }
+    if (!nameNode) {
+      return;
+    }
+    const d = make(n, span, `${parent.symbol}.${nameNode.getText()}`, nameNode, "function", false);
+    d.container = parent.symbol;
+    d.parentKey = parent.key;
+    d.ancestors = [...parent.ancestors, parent.key];
+    out.push(d);
+  });
+  if (out.length > 0) {
+    parent.members = [...(parent.members ?? []), ...out.map((d) => ({ start: d.start, end: d.end }))];
+  }
   return out;
 }
 

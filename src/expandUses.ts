@@ -92,7 +92,10 @@ function addCallerSites(b: Builder, sites: readonly UseSite[]): Decl[] {
   const order: Group[] = [];
   const byKey = new Map<string, Group>();
   for (const s of sites) {
-    const encl = b.enclosingAt(s.rel, s.line);
+    // The outermost function, not the innermost declaration: a call inside a
+    // handler or an effect is worth reading with the component around it, and
+    // the whole point of carrying the declaration was to stop sending a window.
+    const encl = b.enclosingFunctionAt(s.rel, s.line);
     if (!encl) {
       // A use with no declaration around it: a bare module-level expression.
       // The window is all there is.
