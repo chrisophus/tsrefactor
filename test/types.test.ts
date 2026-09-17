@@ -118,7 +118,7 @@ test("a changed method's signature brings its project types, not library ones, a
   assert.deepEqual(
     ofRole(env, "type").map((e) => [e.symbol, e.file, e.priority, e.details]),
     [
-      ["Record", "src/types.ts", 81, { kind: "type", referencedBy: "src/store.ts:Store.insert" }],
+      ["Record", "src/types.ts", 81, { kind: "type", referencedBy: "src/store.ts:Store.insert", via: "signature" }],
       ["Writer", "src/types.ts", 80, { kind: "interface", whyShown: "the interface the changed type satisfies" }],
     ],
   );
@@ -235,4 +235,15 @@ test("an interface that gains a member still brings the classes it broke", (t) =
       .sort(compareStrings),
     ["MemStore", "Store"],
   );
+});
+
+// Item 4c: a changed declaration brings what it refers to. The stage only read
+// signatures, so editing an interface reached none of its members' types.
+test("a changed interface brings the types of its members", (t) => {
+  const env = run(t, [["src/types.ts", "export interface Repo<T> {\n  get(id: RecordId): Maybe<T>;\n}", "export interface Repo<T> {\n  get(id: RecordId): Maybe<T>;\n  last(): Record;\n}"]]);
+  const declared = ofRole(env, "type")
+    .filter((e) => e.details?.["via"] === "declared")
+    .map((e) => e.symbol ?? "")
+    .sort(compareStrings);
+  assert.deepEqual(declared, ["Maybe", "Record", "RecordId"]);
 });

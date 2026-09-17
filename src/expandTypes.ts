@@ -29,29 +29,18 @@ export function expandTypes(b: Builder): void {
   const changed = new Set(b.decls.map((d) => d.key));
   const seen = new Set<string>();
   for (const d of b.decls) {
-    if (!signatureKinds.has(d.kind)) {
+    if (signatureKinds.has(d.kind)) {
+      emitTypes(b, d, signatureTypeDecls(b, d), "signature", changed, seen);
+      // What the body names, which a signature does not reach. A change that
+      // starts constructing a different type, or asserting to one, is judged
+      // against that type and the signature never mentions it.
+      emitTypes(b, d, referencedTypeDecls(b, d), "body", changed, seen);
       continue;
     }
-    for (const target of signatureTypeDecls(b, d)) {
-      if (seen.has(target.key)) {
-        continue;
-      }
-      seen.add(target.key);
-      if (changed.has(target.key) || target.ancestors.some((k) => changed.has(k))) {
-        continue; // its own declaration already carries the change
-      }
-      b.add({
-        role: "type",
-        priority: priorityFor(d),
-        symbol: target.symbol,
-        scope: target.scope,
-        file: target.rel,
-        startLine: target.start,
-        endLine: target.end,
-        content: b.slice(target.rel, target.start, target.end),
-        details: { kind: "type", referencedBy: d.scope },
-      });
-    }
+    // A changed interface, class, type alias or variable. Its own referents
+    // were never walked: the stage only ever read signatures, so editing an
+    // interface brought none of the types of its members.
+    emitTypes(b, d, referencedTypeDecls(b, d), "declared", changed, seen);
   }
 }
 
@@ -63,17 +52,96 @@ export function expandTypes(b: Builder): void {
 // annotations are read first, resolved through imports. Then the checker's own
 // types are walked, which carry what no annotation spells: an inferred return
 // type, the element type of an array, the arguments of a generic.
-function signatureTypeDecls(b: Builder, d: Decl): Decl[] {
+// declCollector accumulates type declarations by key. The two walks below both
+// resolve symbols and both have to dedupe, and writing that twice is one
+// closure two functions have to be kept in step by hand.
+function declCollector(b: Builder): { out: Decl[]; push: (sym: MorphSymbol | undefined) => void } {
   const out: Decl[] = [];
   const keys = new Set<string>();
-  const push = (sym: MorphSymbol | undefined) => {
-    for (const t of declsOfSymbol(b, sym)) {
-      if (!keys.has(t.key)) {
-        keys.add(t.key);
-        out.push(t);
+  return {
+    out,
+    push: (sym: MorphSymbol | undefined): void => {
+      for (const t of declsOfSymbol(b, sym)) {
+        if (!keys.has(t.key)) {
+          keys.add(t.key);
+          out.push(t);
+        }
+      }
+    },
+  };
+}
+
+// typesPerDecl caps how many types one changed declaration contributes under
+// one route. A body naming thirty types would otherwise spend the consumer's
+// budget on the vocabulary of the module rather than on the change.
+const typesPerDecl = 8;
+
+// emitTypes adds the declarations of types reached by one route, once each
+// across the whole change, skipping the ones the change already carries.
+//
+// via says how the type was reached, because the three are worth different
+// amounts: a type in a signature is part of the contract, one in a body is what
+// the code works with, and one a changed declaration refers to is its shape.
+function emitTypes(
+  b: Builder,
+  d: Decl,
+  targets: readonly Decl[],
+  via: string,
+  changed: ReadonlySet<string>,
+  seen: Set<string>,
+): void {
+  let kept = 0;
+  for (const target of targets) {
+    if (seen.has(target.key)) {
+      continue;
+    }
+    if (changed.has(target.key) || target.ancestors.some((k) => changed.has(k))) {
+      continue; // its own declaration already carries the change
+    }
+    if (kept >= typesPerDecl) {
+      b.notes.push(`further ${via} type(s) of ${d.scope} were not expanded (cap ${typesPerDecl} per declaration)`);
+      return;
+    }
+    seen.add(target.key);
+    kept++;
+    b.add({
+      role: "type",
+      priority: priorityFor(d),
+      symbol: target.symbol,
+      scope: target.scope,
+      file: target.rel,
+      startLine: target.start,
+      endLine: target.end,
+      content: b.slice(target.rel, target.start, target.end),
+      details: { kind: "type", referencedBy: d.scope, via },
+    });
+  }
+}
+
+// referencedTypeDecls collects the types a declaration names anywhere inside
+// it: a member's type annotation, a local's, a type assertion, a type argument,
+// or the class of a new expression. Resolution is the checker's, so a name that
+// reaches the type through an alias or a re-export still lands on the
+// declaration it was written in.
+function referencedTypeDecls(b: Builder, d: Decl): Decl[] {
+  const { out, push } = declCollector(b);
+  d.node.forEachDescendant((n) => {
+    if (Node.isTypeReference(n)) {
+      push(n.getTypeName().getSymbol());
+      return;
+    }
+    if (Node.isNewExpression(n)) {
+      const e = n.getExpression();
+      if (Node.isIdentifier(e)) {
+        push(e.getSymbol());
       }
     }
-  };
+  });
+  return out;
+}
+
+function signatureTypeDecls(b: Builder, d: Decl): Decl[] {
+  const { out, push } = declCollector(b);
 
   const fn = Node.isVariableDeclaration(d.node) ? functionValueOf(d.node.getInitializer()) : d.node;
   const annotations: Node[] = [];
