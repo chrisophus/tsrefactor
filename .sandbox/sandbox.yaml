@@ -1,0 +1,26 @@
+# Sandbox Studio's manifest for this repository: how an agent works one GitHub issue here with
+# nobody watching, and which checks its change has to pass before the studio pushes it.
+# Format: docs/manifest.md in chrisophus/sandbox-studio. There is no app to run, so no start hook.
+version: 1
+title: tsrefactor
+base_ref: origin/main
+
+agent:
+  allowed_paths: [.]                # the whole repository; the studio keeps .sandbox/ and .github/ out
+  prompt: .sandbox/agent-prompt.md
+  bash_allow:
+    - "npm ci"
+    - "npm test*"
+    - "npm run typecheck*"
+    - "npm run lint*"
+    - "npm run knip*"
+    - "npm run build*"
+    - "npm run check*"
+    - "node --test *"
+
+checks:
+  - { name: Check, run: .sandbox/check.sh, timeout: 15m }
+
+host:
+  commands: [node, npm, git]
+  per_slot: { memory_mb: 2000, disk_mb: 1000 }
