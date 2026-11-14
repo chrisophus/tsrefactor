@@ -1,0 +1,34 @@
+# Sandbox Studio manifest (github.com/chrisophus/sandbox-studio, docs/manifest.md). A tool with no
+# app: a slot is a worktree, the agent and the checks. The studio takes this repository's GitHub
+# issues labelled `agent` and turns each into a pull request.
+version: 1
+title: tsrefactor
+base_ref: origin/main
+
+hooks:
+  provision: .sandbox/provision.sh  # npm ci, once per slot, as the studio user
+
+agent:
+  allowed_paths: [.]               # the whole repository, except .sandbox/ and .github/
+  prompt: .sandbox/agent-prompt.md
+  bash_allow:                      # the agent's shell under agent_backend: claude-code; prefixes
+    - "npm run typecheck*"
+    - "npm run lint*"
+    - "npm run knip*"
+    - "npm run build*"
+    - "npm test*"
+    - "node --test*"
+
+checks:
+  - { name: Typecheck, run: .sandbox/check.sh, args: [typecheck], timeout: 5m }
+  - { name: Lint, run: .sandbox/check.sh, args: [lint], timeout: 5m }
+  - { name: Tests, run: .sandbox/check.sh, args: [test], timeout: 10m }
+
+host:
+  commands: [node, npm, git]
+  per_slot: { memory_mb: 1500, disk_mb: 1000 }
+
+ticket_ready:                      # ready only once Redline has reviewed the head commit
+  fresh: [.sandbox/redline-fresh.sh, "{pr}"]
+  inflight: [.sandbox/redline-inflight.sh, "{pr}"]
+  request: /redline review          # redline-pr-watch reviews again on this comment
