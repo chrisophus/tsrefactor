@@ -44,7 +44,7 @@ test(
     env["PATH"] = `${bin}${delimiter}${env["PATH"] ?? ""}`;
     const res = spawnSync(
       "redline",
-      ["run", "--base", "HEAD", "--no-lint", "--no-open", "--file", "--session", "e2e"],
+      ["run", "--base", "HEAD", "--no-lint", "--file", "--session", "e2e"],
       { cwd: dir, env, encoding: "utf8", timeout: 240_000 },
     );
     assert.equal(res.status, 0, `redline run failed:\n${res.stdout}\n${res.stderr}`);

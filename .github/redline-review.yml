@@ -7,4 +7,6 @@ blocking: [error, warning]
 require_head: true
 fail_closed_pane: true
 body_style: walkthrough
-body_include: [intent, evidence, confirmations, unknowns, diff-links]
+# Lean walkthrough: verdict, Redline's own overview and the per-file table. No body_include
+# sections, so the stated intent and PR description are not echoed into each review.
+body_include: []
