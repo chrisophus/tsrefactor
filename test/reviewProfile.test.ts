@@ -9,7 +9,7 @@ const lines = new Set(profile.split("\n").filter((l) => !l.startsWith("#")));
 
 test("review profile uses the walkthrough with the chosen sections", () => {
   assert.ok(lines.has("body_style: walkthrough"));
-  const included = [...lines].filter((l) => l.startsWith("  - ")).map((l) => l.slice(4).split(/\s/)[0]);
+  const included = [...lines].filter((l) => l.startsWith("  - ")).map((l) => l.slice(4).split(/\s/, 1)[0]);
   assert.deepEqual(included, ["line-counts", "test-totals", "generated-totals", "low-confidence", "diff-links"]);
 });
 
