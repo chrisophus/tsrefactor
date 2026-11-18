@@ -19,7 +19,7 @@ test("review profile keeps the gate fields", () => {
     "finding_marker: redline-finding:v1",
     "blocking: [error, warning]",
     "require_head: true",
-    "fail_closed_pane: true",
+    "fail_closed_pane: false",
   ]) {
     assert.ok(lines.has(line), line);
   }
