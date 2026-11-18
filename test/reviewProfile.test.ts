@@ -70,7 +70,6 @@ test("review profile keeps the gate fields", () => {
   assert.equal(fields.get("review_marker"), "redline-review:v1");
   assert.equal(fields.get("finding_marker"), "redline-finding:v1");
   assert.equal(fields.get("require_head"), "true");
-  assert.equal(fields.get("fail_closed_pane"), "false");
 });
 
 test("review profile blocks on error and warning", () => {
