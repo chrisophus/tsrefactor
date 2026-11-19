@@ -85,3 +85,10 @@ test("review profile body_include lists only sections Redline knows", () => {
     assert.ok(knownSections.has(entry), `unknown body section: ${entry}`);
   }
 });
+
+test("review profile asks for intent, evidence, confirmations and unknowns", () => {
+  const entries = new Set(fields.get("body_include"));
+  for (const section of ["intent", "evidence", "confirmations", "unknowns"]) {
+    assert.ok(entries.has(section), `missing body section: ${section}`);
+  }
+});

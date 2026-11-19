@@ -8,8 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
-- Redline reviews are terse: the review profile no longer echoes the stated intent, PR
-  description, evidence, confirmations or unknowns.
+- Redline reviews include the stated intent, evidence, confirmations and unknowns again.
 
 ## [0.1.0] - 2026-09-17
 
